@@ -178,6 +178,7 @@ export default function CapsuleDetailPage() {
     intentDeliveryLoading,
     intentDeliveryError,
     invalidateCapsule,
+    retryCapsule,
     invalidateDistribution,
     invalidateVaultAssets,
   } = useCapsuleDetail({ address })
@@ -522,12 +523,19 @@ export default function CapsuleDetailPage() {
       <div className="min-h-screen bg-hero text-Heres-white pt-24 pb-16 px-4">
         <div className="max-w-2xl mx-auto text-center">
           <p className="text-red-400 mb-6">{capsuleError || 'Capsule not found'}</p>
-          <Link
-            href="/capsules"
-            className="inline-flex items-center gap-2 rounded-lg border border-Heres-border bg-Heres-card/80 px-4 py-2 text-Heres-white hover:border-Heres-accent/40"
-          >
-            My Capsule
-          </Link>
+          <div className="flex flex-wrap items-center justify-center gap-3">
+            {capsuleError === 'Failed to load capsule' && (
+              <Button variant="primary" size="md" onClick={() => void retryCapsule()}>
+                Retry
+              </Button>
+            )}
+            <Link
+              href="/capsules"
+              className="inline-flex items-center gap-2 rounded-lg border border-Heres-border bg-Heres-card/80 px-4 py-2 text-Heres-white hover:border-Heres-accent/40"
+            >
+              My Capsule
+            </Link>
+          </div>
         </div>
       </div>
     )

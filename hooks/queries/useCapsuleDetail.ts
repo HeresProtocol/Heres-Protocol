@@ -114,6 +114,8 @@ export interface UseCapsuleDetail {
 
   /** Invalidate the capsule + distribution queries (call after mutations that change on-chain state). */
   invalidateCapsule: () => Promise<void>
+  /** Retry the primary capsule read after a recoverable RPC failure. */
+  retryCapsule: () => Promise<void>
   /** Invalidate the distribution query only. */
   invalidateDistribution: () => Promise<void>
   /** Invalidate the vault-assets query (call after deposit / withdraw). */
@@ -432,6 +434,9 @@ export function useCapsuleDetail({
     intentDeliveryError,
 
     invalidateCapsule,
+    retryCapsule: async () => {
+      await capsuleQuery.refetch()
+    },
     invalidateDistribution,
     invalidateVaultAssets,
   }

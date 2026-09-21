@@ -1400,14 +1400,25 @@ export async function getCapsuleByAddress(
 ): Promise<(IntentCapsule & { capsuleAddress: string }) | null> {
   const connection = getSolanaConnection()
   try {
-    const accountInfo = await connection.getAccountInfo(capsulePda)
+    let accountInfo
+    try {
+      accountInfo = await connection.getAccountInfo(capsulePda)
+    } catch (primaryError) {
+      try {
+        accountInfo = await getSolanaFallbackConnection().getAccountInfo(capsulePda)
+      } catch {
+        throw primaryError
+      }
+    }
     if (!accountInfo || !accountInfo.data) return null
 
     // Liveness: delegated Switch -> read the live copy from the regular ER (token-free); else base.
     const capsule = accountInfo.owner.equals(DELEGATION_PROGRAM_ID)
       ? await decodeDelegatedCapsule(capsulePda, accountInfo)
       : (() => {
-          const c = decodeIntentCapsule(accountInfo.data)
+          if (!accountInfo.owner.equals(getProgramId())) return null
+          const c = tryDecodeIntentCapsule(Buffer.from(accountInfo.data))
+          if (!c) return null
           c.accountOwner = accountInfo.owner
           return c
         })()
