@@ -61,6 +61,8 @@ export default function CreatePage() {
     setIntentReminderEnabled,
     walletTokens,
     tokensLoading,
+    tokensError,
+    retryTokens,
     selectedAssets,
     inactivityUnitOptions,
     inactivityPresets,
@@ -326,7 +328,19 @@ export default function CreatePage() {
                         ))}
                       </div>
                       {tokensLoading && <p className="mt-2 text-xs text-Heres-muted">Scanning your wallet for tokens...</p>}
-                      {!tokensLoading && connected && walletTokens.length === 0 && (
+                      {!tokensLoading && tokensError && connected && (
+                        <div className="mt-2 flex items-center gap-2 text-xs text-amber-300">
+                          <span>Could not load SPL tokens.</span>
+                          <button
+                            type="button"
+                            onClick={() => void retryTokens()}
+                            className="font-semibold underline underline-offset-2 hover:text-amber-200"
+                          >
+                            Retry
+                          </button>
+                        </div>
+                      )}
+                      {!tokensLoading && !tokensError && connected && walletTokens.length === 0 && (
                         <p className="mt-2 text-xs text-Heres-muted">No SPL tokens found in your wallet - you can still lock SOL.</p>
                       )}
                       {!connected && (
