@@ -15,6 +15,10 @@ import type { PublicKey, Transaction, VersionedTransaction } from '@solana/web3.
 export interface HeresWallet {
   publicKey: PublicKey | null
   connected: boolean
+  /** Human-readable signer selected from Privy or Solana Wallet Adapter. */
+  walletName?: string
+  /** True only for the email-created Privy embedded wallet. */
+  isEmbedded?: boolean
   signTransaction?: <T extends Transaction | VersionedTransaction>(transaction: T) => Promise<T>
   signAllTransactions?: <T extends Transaction | VersionedTransaction>(transactions: T[]) => Promise<T[]>
   signMessage?: (message: Uint8Array) => Promise<Uint8Array>

@@ -3,8 +3,10 @@
 import { useMemo } from 'react'
 import { usePrivy } from '@privy-io/react-auth'
 import { useWallets, useSignTransaction, useSignMessage } from '@privy-io/react-auth/solana'
+import { useWallet as useSolanaWallet } from '@solana/wallet-adapter-react'
 import { PublicKey, Transaction, VersionedTransaction } from '@solana/web3.js'
 import type { HeresWallet } from '@/types/wallet'
+import { isPrivyEmbeddedWallet, selectHeresSolanaWallet } from '@/lib/privy-wallet'
 
 // Demo behavior: suppress Privy's per-signature confirmation modal so a flow that
 // signs several transactions (capsule creation signs 3+) runs without popups. The
@@ -13,9 +15,11 @@ import type { HeresWallet } from '@/types/wallet'
 const SHOW_WALLET_UIS = false
 
 /**
- * Privy-backed implementation of the app's `HeresWallet` contract.
+ * Unified implementation of the app's `HeresWallet` contract.
  *
- * Embedded-only: `useWallets()` returns the user's Privy embedded Solana wallet.
+ * Installed Solana extensions are connected directly through Wallet Adapter.
+ * Privy continues to provide the email-created embedded wallet. When both are
+ * connected, Heres uses the external wallet selected in Wallet Adapter.
  * The app builds @solana/web3.js `Transaction`s and broadcasts them to its own RPC
  * connections (base layer + MagicBlock ER + TEE), so this shim only needs to SIGN:
  * it serializes a Transaction to the raw wire bytes Privy expects, then deserializes
@@ -23,25 +27,58 @@ const SHOW_WALLET_UIS = false
  */
 export function useHeresWallet(): HeresWallet {
   const { ready, authenticated } = usePrivy()
-  const { wallets } = useWallets()
+  const { ready: walletsReady, wallets } = useWallets()
   const { signTransaction: privySignTransaction } = useSignTransaction()
   const { signMessage: privySignMessage } = useSignMessage()
+  const solanaWallet = useSolanaWallet()
 
-  // Embedded-only config => the Privy wallet is the only entry, but prefer it explicitly.
-  const embedded = useMemo(
-    () => wallets.find((w) => w.standardWallet?.name === 'Privy') ?? wallets[0],
-    [wallets]
-  )
+  const selectedWallet = useMemo(() => selectHeresSolanaWallet(wallets), [wallets])
 
   const publicKey = useMemo(
-    () => (embedded ? new PublicKey(embedded.address) : null),
-    [embedded]
+    () => (selectedWallet ? new PublicKey(selectedWallet.address) : null),
+    [selectedWallet]
   )
 
-  const connected = ready && authenticated && !!embedded
+  const privyConnected = ready && walletsReady && authenticated && !!selectedWallet
+
+  const externalWallet = useMemo<HeresWallet | null>(() => {
+    if (!solanaWallet.connected || !solanaWallet.publicKey) return null
+
+    const signTransaction = solanaWallet.signTransaction
+    const signAllTransactions =
+      solanaWallet.signAllTransactions ??
+      (signTransaction
+        ? async <T extends Transaction | VersionedTransaction>(transactions: T[]): Promise<T[]> => {
+            const signed: T[] = []
+            for (const transaction of transactions) {
+              signed.push(await signTransaction(transaction))
+            }
+            return signed
+          }
+        : undefined)
+
+    return {
+      publicKey: solanaWallet.publicKey,
+      connected: true,
+      walletName: solanaWallet.wallet?.adapter.name ?? 'Solana wallet',
+      isEmbedded: false,
+      signTransaction,
+      signAllTransactions,
+      signMessage: solanaWallet.signMessage,
+    }
+  }, [
+    solanaWallet.connected,
+    solanaWallet.publicKey,
+    solanaWallet.wallet,
+    solanaWallet.signTransaction,
+    solanaWallet.signAllTransactions,
+    solanaWallet.signMessage,
+  ])
 
   return useMemo<HeresWallet>(() => {
-    if (!embedded || !publicKey) {
+    if (externalWallet) return externalWallet
+
+    if (!selectedWallet || !publicKey) {
       return { publicKey: null, connected: false }
     }
 
@@ -53,7 +90,7 @@ export function useHeresWallet(): HeresWallet {
 
       const { signedTransaction } = await privySignTransaction({
         transaction: new Uint8Array(bytes),
-        wallet: embedded,
+        wallet: selectedWallet,
         options: { uiOptions: { showWalletUIs: SHOW_WALLET_UIS } },
       })
 
@@ -78,12 +115,27 @@ export function useHeresWallet(): HeresWallet {
     const signMessage = async (message: Uint8Array): Promise<Uint8Array> => {
       const { signature } = await privySignMessage({
         message,
-        wallet: embedded,
+        wallet: selectedWallet,
         options: { uiOptions: { showWalletUIs: SHOW_WALLET_UIS } },
       })
       return signature
     }
 
-    return { publicKey, connected: true, signTransaction, signAllTransactions, signMessage }
-  }, [embedded, publicKey, privySignTransaction, privySignMessage])
+    return {
+      publicKey,
+      connected: privyConnected,
+      walletName: selectedWallet.standardWallet?.name || 'Solana wallet',
+      isEmbedded: isPrivyEmbeddedWallet(selectedWallet),
+      signTransaction,
+      signAllTransactions,
+      signMessage,
+    }
+  }, [
+    externalWallet,
+    privyConnected,
+    selectedWallet,
+    publicKey,
+    privySignTransaction,
+    privySignMessage,
+  ])
 }

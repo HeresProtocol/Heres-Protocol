@@ -1,9 +1,11 @@
 'use client'
 
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { Check, ChevronDown, Copy, KeyRound, Loader2, LogOut, Send } from 'lucide-react'
+import { Check, ChevronDown, Copy, KeyRound, Loader2, LogOut, Mail, Send, WalletCards } from 'lucide-react'
 import { usePrivy, type WalletWithMetadata } from '@privy-io/react-auth'
 import { useExportWallet } from '@privy-io/react-auth/solana'
+import { useWallet as useSolanaWallet } from '@solana/wallet-adapter-react'
+import { useWalletModal } from '@solana/wallet-adapter-react-ui'
 import { useHeresWallet } from '@/hooks/useHeresWallet'
 import { useSolBalance } from '@/hooks/queries/useSolBalance'
 import { formatSol } from '@/lib/format'
@@ -17,8 +19,8 @@ function truncate(address: string): string {
 /**
  * Replacement for wallet-adapter's WalletMultiButton.
  *
- * Not authenticated -> opens Privy's email login modal.
- * Authenticated     -> shows the embedded wallet address; click opens a menu to
+ * Not connected -> offers Privy email login or direct Solana Wallet Adapter.
+ * Connected     -> shows the selected wallet address; click opens a menu to
  *                      copy the full address, send funds, securely export the
  *                      embedded wallet private key through Privy, or log out.
  *
@@ -29,6 +31,8 @@ function truncate(address: string): string {
 export function PrivyLoginButton({ className = '' }: { className?: string }) {
   const { ready, authenticated, user, login, logout } = usePrivy()
   const { exportWallet } = useExportWallet()
+  const { connected: externalConnected, disconnect: disconnectExternal } = useSolanaWallet()
+  const { setVisible: setWalletModalVisible } = useWalletModal()
   const { toast } = useToast()
   const wallet = useHeresWallet()
   const { publicKey } = wallet
@@ -106,26 +110,67 @@ export function PrivyLoginButton({ className = '' }: { className?: string }) {
     }
   }, [embeddedWallet, exportWallet, toast])
 
+  const endSession = useCallback(async () => {
+    setOpen(false)
+    if (externalConnected) await disconnectExternal()
+    if (authenticated) await logout()
+  }, [authenticated, disconnectExternal, externalConnected, logout])
+
   const base =
     'inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2 text-sm font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50'
 
-  if (!ready) {
+  if (!wallet.connected) {
     return (
-      <button type="button" disabled className={cn(base, 'bg-Heres-surface text-Heres-muted', className)}>
-        Loading...
-      </button>
-    )
-  }
+      <div ref={rootRef} className={cn('relative inline-flex', fullWidth && 'w-full')}>
+        <button
+          type="button"
+          onClick={() => setOpen((value) => !value)}
+          aria-haspopup="menu"
+          aria-expanded={open}
+          className={cn(base, 'bg-Heres-accent text-Heres-bg hover:opacity-90', fullWidth && 'w-full', className)}
+        >
+          Sign in or connect
+          <ChevronDown
+            className={cn('h-3.5 w-3.5 transition-transform', open && 'rotate-180')}
+            aria-hidden
+          />
+        </button>
 
-  if (!authenticated) {
-    return (
-      <button
-        type="button"
-        onClick={() => login()}
-        className={cn(base, 'bg-Heres-accent text-Heres-bg hover:opacity-90', className)}
-      >
-        Sign in
-      </button>
+        {open && (
+          <div
+            role="menu"
+            style={{ boxShadow: 'var(--shadow-amb)' }}
+            className="absolute right-0 top-full z-50 mt-2 w-64 overflow-hidden rounded-2xl border border-Heres-border bg-Heres-card/95 backdrop-blur-xl"
+          >
+            <button
+              type="button"
+              role="menuitem"
+              disabled={!ready}
+              onClick={() => {
+                if (!ready) return
+                setOpen(false)
+                login({ loginMethods: ['email'] })
+              }}
+              className="group flex w-full items-center gap-3 px-4 py-3.5 text-left text-sm font-medium text-Heres-white transition-colors hover:bg-Heres-accent/10 hover:text-Heres-accent disabled:cursor-wait disabled:opacity-50 disabled:hover:bg-transparent disabled:hover:text-Heres-white"
+            >
+              <Mail className="h-4 w-4 text-Heres-muted group-hover:text-Heres-accent" aria-hidden />
+              {ready ? 'Continue with email' : 'Email sign-in loading…'}
+            </button>
+            <button
+              type="button"
+              role="menuitem"
+              onClick={() => {
+                setOpen(false)
+                setWalletModalVisible(true)
+              }}
+              className="group flex w-full items-center gap-3 border-t border-Heres-border px-4 py-3.5 text-left text-sm font-medium text-Heres-white transition-colors hover:bg-Heres-accent/10 hover:text-Heres-accent"
+            >
+              <WalletCards className="h-4 w-4 text-Heres-muted group-hover:text-Heres-accent" aria-hidden />
+              Connect a Solana wallet
+            </button>
+          </div>
+        )}
+      </div>
     )
   }
 
@@ -169,6 +214,9 @@ export function PrivyLoginButton({ className = '' }: { className?: string }) {
               )}
               <span className="ml-1.5 font-sans text-sm text-Heres-muted">SOL</span>
             </p>
+            <p className="mt-2 text-xs text-Heres-muted">
+              {wallet.walletName ?? 'Solana wallet'} · {wallet.isEmbedded ? 'Email wallet' : 'External wallet'}
+            </p>
           </div>
 
           <div className="border-t border-Heres-border">
@@ -209,6 +257,19 @@ export function PrivyLoginButton({ className = '' }: { className?: string }) {
               </button>
             )}
 
+            <button
+              type="button"
+              role="menuitem"
+              onClick={() => {
+                setOpen(false)
+                setWalletModalVisible(true)
+              }}
+              className="group flex w-full items-center gap-2.5 border-t border-Heres-border px-4 py-3 text-left text-sm font-medium text-Heres-white transition-colors hover:bg-Heres-accent/10 hover:text-Heres-accent"
+            >
+              <WalletCards className="h-4 w-4 text-Heres-muted transition-colors group-hover:text-Heres-accent" aria-hidden />
+              {externalConnected ? 'Change wallet' : 'Connect a Solana wallet'}
+            </button>
+
             {embeddedWallet && (
               <button
                 type="button"
@@ -234,14 +295,11 @@ export function PrivyLoginButton({ className = '' }: { className?: string }) {
             <button
               type="button"
               role="menuitem"
-              onClick={() => {
-                setOpen(false)
-                logout()
-              }}
+              onClick={() => void endSession()}
               className="group flex w-full items-center gap-2.5 border-t border-Heres-border px-4 py-3 text-left text-sm font-medium text-Heres-white transition-colors hover:bg-red-500/10 hover:text-red-400"
             >
               <LogOut className="h-4 w-4 text-Heres-muted transition-colors group-hover:text-red-400" aria-hidden />
-              Log out
+              {externalConnected && !authenticated ? 'Disconnect wallet' : 'Log out'}
             </button>
           </div>
         </div>

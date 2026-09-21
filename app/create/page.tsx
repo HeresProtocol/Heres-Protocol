@@ -212,9 +212,9 @@ export default function CreatePage() {
           {!connected && (
             <div className="card-Heres p-8 text-center">
               <Shield className="mx-auto mb-5 h-14 w-14 text-Heres-accent" />
-              <h2 className="text-2xl font-bold text-Heres-white">Sign In to Continue</h2>
+              <h2 className="text-2xl font-bold text-Heres-white">Connect to Continue</h2>
               <p className="mx-auto mt-3 max-w-2xl text-Heres-muted">
-                Sign in with your email to unlock capsule creation and NFT/token selection. A secure Solana wallet is created for you automatically.
+                Continue with email to use a Privy embedded wallet, or connect your Solana wallet to select and protect its assets.
               </p>
               <div className="mt-6 flex justify-center">
                 <PrivyLoginButton className="!h-11 !rounded-xl !bg-Heres-surface !px-5 !py-0 !text-sm !font-medium !text-Heres-white transition-opacity hover:!bg-Heres-card active:scale-95" />
