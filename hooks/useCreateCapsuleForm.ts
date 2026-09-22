@@ -22,7 +22,7 @@ import {
   MAX_CAPSULE_MODIFICATIONS,
 } from '@/constants'
 import { daysToSeconds } from '@/utils/intent'
-import { getVaultTokenAccounts } from '@/lib/spl'
+import { getVaultTokenAccountsWithFallback } from '@/lib/spl'
 import { buildIntentSignedMessage } from '@/utils/intentAuth'
 import { bytesToBase64, sha256Hex } from '@/utils/intentClient'
 import { isValidEmail } from '@/utils/validation'
@@ -33,7 +33,11 @@ import {
   firstError,
   MAX_NFT_ASSIGNMENTS,
 } from '@/lib/schemas'
-import { getSolanaConnection, isValidSolanaAddress } from '@/config/solana'
+import {
+  getSolanaConnection,
+  getSolanaFallbackConnection,
+  isValidSolanaAddress,
+} from '@/config/solana'
 import { PublicKey, LAMPORTS_PER_SOL } from '@solana/web3.js'
 import { BN } from '@coral-xyz/anchor'
 import { queryKeys } from '@/lib/query/keys'
@@ -323,7 +327,11 @@ export function useCreateCapsuleForm() {
     queryKey: queryKeys.wallet.tokens(publicKey?.toBase58() ?? ''),
     enabled: capsuleType === 'token' && connected && !!publicKey,
     queryFn: async (): Promise<WalletFungibleAsset[]> => {
-      const accts = await getVaultTokenAccounts(getSolanaConnection(), publicKey!)
+      // Use the public/fallback endpoint first so an exhausted keyed RPC cannot block wallet inventory.
+      const accts = await getVaultTokenAccountsWithFallback(
+        [getSolanaFallbackConnection(), getSolanaConnection()],
+        publicKey!
+      )
       const tokens: WalletFungibleAsset[] = accts
         .filter((t) => t.amount > 0n && !(t.decimals === 0 && t.amount === 1n))
         .map((t) => ({
@@ -341,6 +349,7 @@ export function useCreateCapsuleForm() {
   })
   const walletTokens = tokensQuery.data ?? []
   const tokensLoading = tokensQuery.isFetching
+  const tokensError = tokensQuery.isError
   const solBalance = useSolBalance(publicKey)
   const spendableSol = spendableSolLamports(solBalance.lamports)
   const solAsset: WalletFungibleAsset = {
@@ -983,6 +992,8 @@ export function useCreateCapsuleForm() {
     walletTokens,
     walletAssets,
     tokensLoading,
+    tokensError,
+    retryTokens: () => tokensQuery.refetch(),
     solBalanceLoading: solBalance.isLoading,
     // derived
     supportsMinuteMode,

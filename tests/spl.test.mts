@@ -4,6 +4,7 @@ import { PublicKey } from '@solana/web3.js'
 import {
   ataFor,
   getVaultTokenAccounts,
+  getVaultTokenAccountsWithFallback,
   TOKEN_2022_PROGRAM_ID,
   TOKEN_PROGRAM_ID,
 } from '../lib/spl.ts'
@@ -80,4 +81,57 @@ test('vault token scan propagates RPC errors instead of treating the vault as dr
   }
 
   await assert.rejects(getVaultTokenAccounts(connection as any, owner), /RPC unavailable/)
+})
+
+test('wallet token scan falls back when the first RPC is rate limited', async () => {
+  let fallbackCalls = 0
+  const rateLimited = {
+    rpcEndpoint: 'https://limited.example',
+    getParsedTokenAccountsByOwner: async () => {
+      throw new Error('429 Too Many Requests')
+    },
+  }
+  const fallback = {
+    rpcEndpoint: 'https://fallback.example',
+    getParsedTokenAccountsByOwner: async (_owner: PublicKey, filter: { programId: PublicKey }) => {
+      fallbackCalls += 1
+      return {
+        value: filter.programId.equals(TOKEN_PROGRAM_ID)
+          ? [parsedTokenAccount(classicMint, '10', 9, TOKEN_PROGRAM_ID)]
+          : [],
+      }
+    },
+  }
+
+  const accounts = await getVaultTokenAccountsWithFallback(
+    [rateLimited as any, fallback as any],
+    owner
+  )
+
+  assert.equal(fallbackCalls, 2)
+  assert.equal(accounts.length, 1)
+  assert.equal(accounts[0].mint.equals(classicMint), true)
+})
+
+test('wallet token scan does not call the fallback after a successful scan', async () => {
+  let fallbackCalls = 0
+  const primary = {
+    rpcEndpoint: 'https://primary.example',
+    getParsedTokenAccountsByOwner: async () => ({ value: [] }),
+  }
+  const fallback = {
+    rpcEndpoint: 'https://fallback.example',
+    getParsedTokenAccountsByOwner: async () => {
+      fallbackCalls += 1
+      return { value: [] }
+    },
+  }
+
+  const accounts = await getVaultTokenAccountsWithFallback(
+    [primary as any, fallback as any],
+    owner
+  )
+
+  assert.deepEqual(accounts, [])
+  assert.equal(fallbackCalls, 0)
 })

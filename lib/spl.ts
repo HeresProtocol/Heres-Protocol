@@ -111,3 +111,26 @@ export async function getVaultTokenAccounts(
   }
   return out
 }
+
+/** Try token scans in order, skipping duplicate RPC endpoints. */
+export async function getVaultTokenAccountsWithFallback(
+  connections: readonly Connection[],
+  owner: PublicKey
+): Promise<VaultTokenAccount[]> {
+  let firstError: unknown
+  const attemptedEndpoints = new Set<string>()
+
+  for (const connection of connections) {
+    if (attemptedEndpoints.has(connection.rpcEndpoint)) continue
+    attemptedEndpoints.add(connection.rpcEndpoint)
+
+    try {
+      return await getVaultTokenAccounts(connection, owner)
+    } catch (error) {
+      firstError ??= error
+    }
+  }
+
+  if (firstError) throw firstError
+  throw new Error('No Solana RPC endpoint is available for the wallet token scan')
+}
