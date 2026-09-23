@@ -10,8 +10,8 @@ let cachedConnection: Connection | null = null
 let cachedFallbackConnection: Connection | null = null
 
 /**
- * Get Solana connection with Helius RPC (Base Layer).
- * Use Helius when API key is set; otherwise fallback to public RPC.
+ * Get the primary Solana base-layer connection. Helius is kept as an optional fallback so an
+ * invalid or rate-limited provider key cannot block capsule reads and writes.
  */
 export function getSolanaConnection(): Connection {
   if (cachedConnection) return cachedConnection

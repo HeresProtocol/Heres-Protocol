@@ -9,6 +9,13 @@
 
 import { HELIUS_CONFIG, SOLANA_CONFIG } from '@/constants'
 import type { WalletActivity } from '@/types'
+import { Connection, PublicKey } from '@solana/web3.js'
+import {
+  activityFromTransactions,
+  fetchHeliusJson,
+  getDefaultHeliusRpcUrl,
+  isValidHeliusApiKey,
+} from './helius-client'
 
 const SOLANA_ADDRESS_RE = /^[1-9A-HJ-NP-Za-km-z]{32,44}$/
 const SOLANA_SIGNATURE_RE = /^[1-9A-HJ-NP-Za-km-z]{64,128}$/
@@ -19,6 +26,17 @@ function isValidSolanaAddress(value: string): boolean {
 
 function isValidSolanaSignature(value: string): boolean {
   return SOLANA_SIGNATURE_RE.test(value)
+}
+
+function getHeliusApiKey(): string | null {
+  const serverKey = typeof window === 'undefined' ? process.env.HELIUS_API_KEY : undefined
+  const key = serverKey || SOLANA_CONFIG.HELIUS_API_KEY
+  return isValidHeliusApiKey(key) ? key.trim() : null
+}
+
+function getHeliusRpcUrl(): string | null {
+  const key = getHeliusApiKey()
+  return key ? getDefaultHeliusRpcUrl(SOLANA_CONFIG.NETWORK, key) : null
 }
 
 /**
@@ -90,10 +108,9 @@ export async function getTransactionsForAddress(
       filters = {},
     } = params
 
-    const rpcUrl = HELIUS_CONFIG.RPC_URL
-    if (!rpcUrl) {
-      throw new Error('Helius RPC URL not configured')
-    }
+    if (!isValidSolanaAddress(address)) return null
+    const rpcUrl = getHeliusRpcUrl()
+    if (!rpcUrl) return null
 
     const requestBody = {
       jsonrpc: '2.0',
@@ -112,7 +129,7 @@ export async function getTransactionsForAddress(
       ],
     }
 
-    const response = await fetch(rpcUrl, {
+    const data = await fetchHeliusJson<any>(rpcUrl, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -120,20 +137,12 @@ export async function getTransactionsForAddress(
       body: JSON.stringify(requestBody),
     })
 
-    if (!response.ok) {
-      const errorText = await response.text()
-      console.error(`Helius RPC error: ${response.status} ${response.statusText}`, errorText)
-      throw new Error(`Helius RPC error: ${response.statusText}`)
-    }
-
-    const data = await response.json()
-
     if (data.error) {
       const errorCode = data.error.code
       const errorMessage = data.error.message || ''
       
       // Check if it's a paid plan requirement error (403 or -32403)
-      if (response.status === 403 || errorCode === -32403 || errorMessage.includes('paid plans') || errorMessage.includes('upgrade')) {
+      if (errorCode === -32403 || errorMessage.includes('paid plans') || errorMessage.includes('upgrade')) {
         console.warn('getTransactionsForAddress requires a paid Helius plan. Falling back to Enhanced Transactions API.')
         return null // Return null to trigger fallback
       }
@@ -160,96 +169,24 @@ export async function getTransactionsForAddress(
  * Falls back to Enhanced Transactions API if getTransactionsForAddress is not available (requires paid plan)
  */
 export async function getWalletActivity(walletAddress: string): Promise<WalletActivity | null> {
-  try {
-    // Use Enhanced Transactions API (free tier)
-    console.log('Fetching wallet activity from Enhanced Transactions API for wallet:', walletAddress)
-    const response = await fetch(
-      `${HELIUS_CONFIG.BASE_URL}/addresses/${walletAddress}/transactions?api-key=${SOLANA_CONFIG.HELIUS_API_KEY}&limit=100`
-    )
-    
-    if (!response.ok) {
-      console.warn(`Enhanced Transactions API error: ${response.status} ${response.statusText}`)
-      return {
-        wallet: walletAddress,
-        lastSignature: '',
-        lastActivityTimestamp: 0,
-        transactionCount: 0,
-      }
+  if (!isValidSolanaAddress(walletAddress)) return null
+
+  // Activity only needs signatures and block times, so use the standard Solana RPC method. This
+  // keeps liveness working when the legacy Enhanced REST API is unavailable or the key is throttled.
+  const endpoints = [HELIUS_CONFIG.RPC_URL, HELIUS_CONFIG.RPC_URL_ALT, HELIUS_CONFIG.PUBLIC_RPC_URL]
+  const attempted = new Set<string>()
+  for (const endpoint of endpoints) {
+    if (!endpoint || attempted.has(endpoint)) continue
+    attempted.add(endpoint)
+    try {
+      const connection = new Connection(endpoint, 'confirmed')
+      const signatures = await connection.getSignaturesForAddress(new PublicKey(walletAddress), { limit: 100 }, 'confirmed')
+      return activityFromTransactions(walletAddress, signatures)
+    } catch {
+      // Try the next independent endpoint. A provider outage must never look like wallet inactivity.
     }
-    
-    const data = await response.json()
-    
-    // Handle different response formats from Enhanced Transactions API
-    let transactions: any[] = []
-    if (Array.isArray(data)) {
-      transactions = data
-    } else if (data && Array.isArray(data.transactions)) {
-      transactions = data.transactions
-    } else if (data && data.result && Array.isArray(data.result)) {
-      transactions = data.result
-    } else if (data && data.data && Array.isArray(data.data)) {
-      transactions = data.data
-    }
-    
-    if (!transactions || transactions.length === 0) {
-      console.log('No transactions found for wallet:', walletAddress)
-      return {
-        wallet: walletAddress,
-        lastSignature: '',
-        lastActivityTimestamp: 0,
-        transactionCount: 0,
-      }
-    }
-    
-    // Sort transactions by timestamp (newest first)
-    transactions.sort((a, b) => {
-      const timeA = a.timestamp || a.blockTime || a.tx?.blockTime || 0
-      const timeB = b.timestamp || b.blockTime || b.tx?.blockTime || 0
-      return timeB - timeA
-    })
-    
-    const latestTx = transactions[0]
-    
-    const signature = latestTx.signature || 
-                     latestTx.transactionSignature ||
-                     latestTx.transaction?.signatures?.[0] ||
-                     latestTx.tx?.signature ||
-                     latestTx.signatures?.[0] ||
-                     ''
-    
-    let timestamp = 0
-    if (latestTx.timestamp) {
-      timestamp = typeof latestTx.timestamp === 'number' 
-        ? latestTx.timestamp 
-        : parseInt(String(latestTx.timestamp))
-    } else if (latestTx.blockTime) {
-      timestamp = typeof latestTx.blockTime === 'number'
-        ? latestTx.blockTime
-        : parseInt(String(latestTx.blockTime))
-    } else if (latestTx.tx?.blockTime) {
-      timestamp = typeof latestTx.tx.blockTime === 'number'
-        ? latestTx.tx.blockTime
-        : parseInt(String(latestTx.tx.blockTime))
-    }
-    
-    const timestampMs = timestamp > 1000000000000 ? timestamp : timestamp * 1000
-    
-    console.log('Helius Enhanced Transactions API response for wallet:', walletAddress, {
-      transactionCount: transactions.length,
-      latestSignature: signature,
-      latestTimestamp: timestampMs,
-    })
-    
-    return {
-      wallet: walletAddress,
-      lastSignature: signature,
-      lastActivityTimestamp: timestampMs,
-      transactionCount: transactions.length,
-    }
-  } catch (error) {
-    console.error('Error fetching wallet activity from Helius:', error)
-    return null
   }
+  return null
 }
 
 /**
@@ -257,29 +194,30 @@ export async function getWalletActivity(walletAddress: string): Promise<WalletAc
  */
 export async function createWebhook(
   walletAddress: string,
-  webhookUrl: string
+  webhookUrl: string,
+  authHeader?: string
 ): Promise<string | null> {
+  const apiKey = getHeliusApiKey()
+  if (!apiKey || !isValidSolanaAddress(walletAddress)) return null
+  const webhookAuth = authHeader || (typeof window === 'undefined' ? process.env.HELIUS_WEBHOOK_AUTH_TOKEN : undefined)
   try {
-    // Note: Webhooks might use different endpoint, but keeping BASE_URL for consistency
-    const response = await fetch(`${HELIUS_CONFIG.BASE_URL}/webhooks?api-key=${SOLANA_CONFIG.HELIUS_API_KEY}`, {
+    const url = new URL(`${HELIUS_CONFIG.BASE_URL}/webhooks`)
+    url.searchParams.set('api-key', apiKey)
+    const data = await fetchHeliusJson<any>(url, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
         webhookURL: webhookUrl,
-        transactionTypes: ['Any'],
+        transactionTypes: ['ANY'],
         accountAddresses: [walletAddress],
         webhookType: 'enhanced',
+        ...(webhookAuth ? { authHeader: webhookAuth } : {}),
       }),
     })
-    
-    if (!response.ok) {
-      throw new Error(`Helius webhook creation error: ${response.statusText}`)
-    }
-    
-    const data = await response.json()
-    return data.webhookID
+
+    return data.webhookID || data.webhookId || null
   } catch (error) {
     console.error('Error creating webhook:', error)
     return null
@@ -311,27 +249,30 @@ export interface HeliusNftItem {
  * Use when HELIUS_API_KEY is set for full metadata (name, image).
  * @see https://docs.helius.dev/compression-and-das-api/digital-asset-standard-das-api/get-assets-by-owner
  */
-export async function getAssetsByOwner(ownerAddress: string): Promise<HeliusNftItem[]> {
-  if (!SOLANA_CONFIG.HELIUS_API_KEY) return []
-  const rpcUrl = HELIUS_CONFIG.RPC_URL
-  if (!rpcUrl) return []
+export async function getAssetsByOwner(ownerAddress: string): Promise<HeliusNftItem[] | null> {
+  if (!isValidSolanaAddress(ownerAddress)) return null
+  const rpcUrl = getHeliusRpcUrl()
+  if (!rpcUrl) return null
 
   try {
-    const response = await fetch(rpcUrl, {
+    const data = await fetchHeliusJson<any>(rpcUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         jsonrpc: '2.0',
         id: 1,
         method: 'getAssetsByOwner',
-        params: { ownerAddress },
+        params: {
+          ownerAddress,
+          page: 1,
+          limit: 1000,
+          displayOptions: { showFungible: false, showNativeBalance: false, showZeroBalance: false },
+        },
       }),
     })
-    if (!response.ok) return []
-
-    const data = await response.json()
+    if (data.error) throw new Error(data.error.message || 'Helius DAS error')
     const result = data.result
-    if (!result || !Array.isArray(result.items)) return []
+    if (!result || !Array.isArray(result.items)) return null
 
     const items: HeliusNftItem[] = result.items
       // Heres currently custodies mint/ATA-backed NFTs through SPL TransferChecked. Exclude cNFTs,
@@ -352,7 +293,7 @@ export async function getAssetsByOwner(ownerAddress: string): Promise<HeliusNftI
     return items
   } catch (e) {
     console.error('Helius getAssetsByOwner error:', e)
-    return []
+    return null
   }
 }
 
@@ -361,7 +302,9 @@ export async function getAssetsByOwner(ownerAddress: string): Promise<HeliusNftI
  * Use when HELIUS_API_KEY is set for full metadata (name, image).
  */
 export async function getNftsByOwner(ownerAddress: string): Promise<HeliusNftItem[]> {
-  return getAssetsByOwner(ownerAddress)
+  const items = await getAssetsByOwner(ownerAddress)
+  if (items === null) throw new Error('Helius NFT service is temporarily unavailable')
+  return items
 }
 
 /**
@@ -373,19 +316,18 @@ export async function getEnhancedTransactions(
   limit = 100,
   before?: string
 ): Promise<any[]> {
-  if (!SOLANA_CONFIG.HELIUS_API_KEY) return []
+  const apiKey = getHeliusApiKey()
+  if (!apiKey) return []
   if (!isValidSolanaAddress(address)) return []
   try {
     const safeAddress = encodeURIComponent(address)
     const url = new URL(`${HELIUS_CONFIG.BASE_URL}/addresses/${safeAddress}/transactions`)
-    url.searchParams.set('api-key', SOLANA_CONFIG.HELIUS_API_KEY)
+    url.searchParams.set('api-key', apiKey)
     url.searchParams.set('limit', String(limit))
     if (before && isValidSolanaSignature(before)) {
       url.searchParams.set('before', before)
     }
-    const response = await fetch(url.toString())
-    if (!response.ok) return []
-    const data = await response.json()
+    const data = await fetchHeliusJson<any>(url)
     const list = Array.isArray(data) ? data : data?.transactions ?? data?.data ?? data?.result ?? []
     return Array.isArray(list) ? list : []
   } catch (e) {

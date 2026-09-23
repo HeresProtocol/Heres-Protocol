@@ -3,6 +3,12 @@
  */
 
 import idl from '@/idl/heres_program.json'
+import {
+  getDefaultHeliusApiBaseUrl,
+  getDefaultHeliusRpcUrl,
+  getDefaultSolanaRpcUrl,
+  isValidHeliusApiKey,
+} from '@/lib/helius-client'
 
 export type SolanaNetwork = 'devnet' | 'testnet' | 'mainnet-beta'
 
@@ -15,28 +21,6 @@ function normalizeSolanaNetwork(value: string | undefined): SolanaNetwork {
   if (normalized === 'mainnet' || normalized === 'mainnet-beta') return 'mainnet-beta'
   if (normalized === 'testnet') return 'testnet'
   return 'devnet'
-}
-
-function getDefaultSolanaRpcUrl(network: SolanaNetwork): string {
-  switch (network) {
-    case 'mainnet-beta':
-      return 'https://api.mainnet-beta.solana.com'
-    case 'testnet':
-      return 'https://api.testnet.solana.com'
-    case 'devnet':
-    default:
-      return 'https://api.devnet.solana.com'
-  }
-}
-
-function getDefaultHeliusRpcUrl(network: SolanaNetwork, apiKey: string): string {
-  const subdomain = network === 'mainnet-beta' ? 'mainnet' : network
-  return `https://${subdomain}.helius-rpc.com/?api-key=${apiKey}`
-}
-
-function getDefaultHeliusApiBaseUrl(network: SolanaNetwork): string {
-  const subdomain = network === 'mainnet-beta' ? 'mainnet' : network
-  return `https://api-${subdomain}.helius-rpc.com/v0`
 }
 
 export function getAssetMintEnvKey(symbol: string): string {
@@ -109,7 +93,7 @@ export const SOLANA_CONFIG = {
     FALLBACK_RPC_URL:
       process.env.SOLANA_FALLBACK_RPC_URL ||
       process.env.NEXT_PUBLIC_SOLANA_FALLBACK_RPC_URL ||
-      getDefaultSolanaRpcUrl(normalizeSolanaNetwork(process.env.NEXT_PUBLIC_SOLANA_NETWORK)),
+      '',
     /** Platform wallet for the one-time creation fee */
     PLATFORM_FEE_RECIPIENT: process.env.NEXT_PUBLIC_PLATFORM_FEE_RECIPIENT || 'Covn3moA8qstPgXPgueRGMSmi94yXvuDCWTjQVBxHpzb',
     // Relayer / crank wallet pubkey. Doubles as the default heartbeat_authority on new capsules so the
@@ -125,13 +109,15 @@ export const SOLANA_CONFIG = {
 
 // Helius API Configuration
 export const HELIUS_CONFIG = {
-  BASE_URL: getDefaultHeliusApiBaseUrl(SOLANA_CONFIG.NETWORK),
-  RPC_URL: SOLANA_CONFIG.RPC_URL
-    ? SOLANA_CONFIG.RPC_URL
-    : SOLANA_CONFIG.HELIUS_API_KEY
+  BASE_URL: getDefaultHeliusApiBaseUrl(),
+  // Never let a revoked, exhausted, or misconfigured Helius key block capsule creation. An explicit
+  // server RPC wins; otherwise the standard Solana endpoint is primary and Helius is optional.
+  RPC_URL: SOLANA_CONFIG.RPC_URL || getDefaultSolanaRpcUrl(SOLANA_CONFIG.NETWORK),
+  RPC_URL_ALT:
+    SOLANA_CONFIG.FALLBACK_RPC_URL ||
+    (isValidHeliusApiKey(SOLANA_CONFIG.HELIUS_API_KEY)
       ? getDefaultHeliusRpcUrl(SOLANA_CONFIG.NETWORK, SOLANA_CONFIG.HELIUS_API_KEY)
-      : getDefaultSolanaRpcUrl(SOLANA_CONFIG.NETWORK),
-  RPC_URL_ALT: SOLANA_CONFIG.FALLBACK_RPC_URL || getDefaultSolanaRpcUrl(SOLANA_CONFIG.NETWORK),
+      : getDefaultSolanaRpcUrl(SOLANA_CONFIG.NETWORK)),
   PUBLIC_RPC_URL: getDefaultSolanaRpcUrl(SOLANA_CONFIG.NETWORK),
 } as const
 

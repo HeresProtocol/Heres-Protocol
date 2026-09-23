@@ -327,9 +327,9 @@ export function useCreateCapsuleForm() {
     queryKey: queryKeys.wallet.tokens(publicKey?.toBase58() ?? ''),
     enabled: capsuleType === 'token' && connected && !!publicKey,
     queryFn: async (): Promise<WalletFungibleAsset[]> => {
-      // Use the public/fallback endpoint first so an exhausted keyed RPC cannot block wallet inventory.
+      // Use the primary/public endpoint first so an exhausted or revoked Helius key cannot block inventory.
       const accts = await getVaultTokenAccountsWithFallback(
-        [getSolanaFallbackConnection(), getSolanaConnection()],
+        [getSolanaConnection(), getSolanaFallbackConnection()],
         publicKey!
       )
       const tokens: WalletFungibleAsset[] = accts
