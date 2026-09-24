@@ -31,18 +31,34 @@ export async function confirmTransactionOrThrow(
   const conn = connection as any
   if (typeof conn.getSignatureStatuses === 'function') {
     const start = Date.now()
-    while (Date.now() - start < 30_000) {
-      await new Promise((r) => setTimeout(r, 800))
-      const res = await conn.getSignatureStatuses([strategy.signature])
-      const s = res?.value?.[0]
-      if (s) {
-        if (s.err) {
-          throw new Error(`Transaction ${strategy.signature} failed: ${JSON.stringify(s.err)}`)
+    const maxMs = 30_000
+    const pollMs = 800
+    let lastError: unknown
+
+    while (Date.now() - start < maxMs) {
+      await new Promise((r) => setTimeout(r, pollMs))
+      try {
+        const res = await conn.getSignatureStatuses([strategy.signature])
+        const s = res?.value?.[0]
+        if (s) {
+          if (s.err) {
+            throw new Error(`Transaction ${strategy.signature} failed: ${JSON.stringify(s.err)}`)
+          }
+          if (['confirmed', 'finalized'].includes(s.confirmationStatus ?? '')) {
+            return
+          }
         }
-        if (['confirmed', 'finalized'].includes(s.confirmationStatus ?? '')) {
-          return
+      } catch (error) {
+        lastError = error
+        if (String((error as Error)?.message ?? error).includes('429')) {
+          continue
         }
+        throw error
       }
+    }
+
+    if (lastError) {
+      console.warn(`Confirmation polling for ${strategy.signature} hit RPC throttling; falling back to confirmTransaction.`)
     }
   }
 

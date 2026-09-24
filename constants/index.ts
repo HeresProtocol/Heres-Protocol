@@ -74,6 +74,22 @@ export function getNetworkDisplayLabel(network = SOLANA_CONFIG.NETWORK): string 
   }
 }
 
+export function getConfiguredHeliusApiKey(): string {
+  return process.env.HELIUS_API_KEY?.trim() || process.env.NEXT_PUBLIC_HELIUS_API_KEY?.trim() || ''
+}
+
+export function getConfiguredSolanaRpcUrl(network: SolanaNetwork = normalizeSolanaNetwork(process.env.NEXT_PUBLIC_SOLANA_NETWORK)): string {
+  const configuredRpc = process.env.SOLANA_RPC_URL?.trim() || process.env.NEXT_PUBLIC_SOLANA_RPC_URL?.trim() || ''
+  if (configuredRpc) return configuredRpc
+
+  const heliusKey = getConfiguredHeliusApiKey()
+  if (isValidHeliusApiKey(heliusKey)) {
+    return getDefaultHeliusRpcUrl(network, heliusKey)
+  }
+
+  return getDefaultSolanaRpcUrl(network)
+}
+
 // Solana Configuration
 export const SOLANA_CONFIG = {
   NETWORK: normalizeSolanaNetwork(process.env.NEXT_PUBLIC_SOLANA_NETWORK),
@@ -88,12 +104,11 @@ export const SOLANA_CONFIG = {
   // (create/delegate/execute) - those always use PROGRAM_ID above. Override with
   // DASHBOARD_STATS_PROGRAM_ID; set it to PROGRAM_ID's value to show live-program stats.
   STATS_PROGRAM_ID: process.env.DASHBOARD_STATS_PROGRAM_ID || '26pDfWXnq9nm1Y5J6siwQsVfHXKxKo5vKvRMVCpqXms6',
-  HELIUS_API_KEY: process.env.NEXT_PUBLIC_HELIUS_API_KEY || '',
-    RPC_URL: process.env.SOLANA_RPC_URL || '',
+  HELIUS_API_KEY: getConfiguredHeliusApiKey(),
+    RPC_URL: getConfiguredSolanaRpcUrl(normalizeSolanaNetwork(process.env.NEXT_PUBLIC_SOLANA_NETWORK)),
     FALLBACK_RPC_URL:
-      process.env.SOLANA_FALLBACK_RPC_URL ||
-      process.env.NEXT_PUBLIC_SOLANA_FALLBACK_RPC_URL ||
-      '',
+      (process.env.SOLANA_FALLBACK_RPC_URL || process.env.NEXT_PUBLIC_SOLANA_FALLBACK_RPC_URL || '').trim() ||
+      getConfiguredSolanaRpcUrl(normalizeSolanaNetwork(process.env.NEXT_PUBLIC_SOLANA_NETWORK)),
     /** Platform wallet for the one-time creation fee */
     PLATFORM_FEE_RECIPIENT: process.env.NEXT_PUBLIC_PLATFORM_FEE_RECIPIENT || 'Covn3moA8qstPgXPgueRGMSmi94yXvuDCWTjQVBxHpzb',
     // Relayer / crank wallet pubkey. Doubles as the default heartbeat_authority on new capsules so the
@@ -110,14 +125,14 @@ export const SOLANA_CONFIG = {
 // Helius API Configuration
 export const HELIUS_CONFIG = {
   BASE_URL: getDefaultHeliusApiBaseUrl(),
-  // Never let a revoked, exhausted, or misconfigured Helius key block capsule creation. An explicit
-  // server RPC wins; otherwise the standard Solana endpoint is primary and Helius is optional.
-  RPC_URL: SOLANA_CONFIG.RPC_URL || getDefaultSolanaRpcUrl(SOLANA_CONFIG.NETWORK),
+  // Prefer Helius for the primary RPC when a valid key is present. Public devnet is only a fallback
+  // when the Helius key is absent or a server env explicitly overrides it.
+  RPC_URL: SOLANA_CONFIG.RPC_URL || getConfiguredSolanaRpcUrl(SOLANA_CONFIG.NETWORK),
   RPC_URL_ALT:
     SOLANA_CONFIG.FALLBACK_RPC_URL ||
     (isValidHeliusApiKey(SOLANA_CONFIG.HELIUS_API_KEY)
       ? getDefaultHeliusRpcUrl(SOLANA_CONFIG.NETWORK, SOLANA_CONFIG.HELIUS_API_KEY)
-      : getDefaultSolanaRpcUrl(SOLANA_CONFIG.NETWORK)),
+      : getConfiguredSolanaRpcUrl(SOLANA_CONFIG.NETWORK)),
   PUBLIC_RPC_URL: getDefaultSolanaRpcUrl(SOLANA_CONFIG.NETWORK),
 } as const
 

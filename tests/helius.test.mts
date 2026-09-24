@@ -10,6 +10,7 @@ import {
   isValidHeliusApiKey,
   parseRetryAfterMs,
 } from '../lib/helius-client.ts'
+import { getConfiguredHeliusApiKey, getConfiguredSolanaRpcUrl } from '../constants/index.ts'
 
 test('Helius endpoints use the supported REST and network RPC hosts', () => {
   assert.equal(getDefaultHeliusApiBaseUrl(), 'https://api.helius.xyz/v0')
@@ -77,4 +78,33 @@ test('activity normalization selects the newest real transaction', () => {
     transactionCount: 2,
   })
   assert.equal(parseRetryAfterMs('1.5'), 1_500)
+})
+
+test('configured RPC prefers Helius over public devnet whenever a valid key is present', () => {
+  const priorKey = process.env.HELIUS_API_KEY
+  const priorPublicKey = process.env.NEXT_PUBLIC_HELIUS_API_KEY
+  const priorRpc = process.env.SOLANA_RPC_URL
+  const priorFallback = process.env.SOLANA_FALLBACK_RPC_URL
+
+  process.env.HELIUS_API_KEY = 'real-key'
+  delete process.env.NEXT_PUBLIC_HELIUS_API_KEY
+  delete process.env.SOLANA_RPC_URL
+  delete process.env.SOLANA_FALLBACK_RPC_URL
+
+  try {
+    assert.equal(getConfiguredHeliusApiKey(), 'real-key')
+    assert.equal(getConfiguredSolanaRpcUrl('devnet'), 'https://devnet.helius-rpc.com/?api-key=real-key')
+  } finally {
+    if (priorKey === undefined) delete process.env.HELIUS_API_KEY
+    else process.env.HELIUS_API_KEY = priorKey
+
+    if (priorPublicKey === undefined) delete process.env.NEXT_PUBLIC_HELIUS_API_KEY
+    else process.env.NEXT_PUBLIC_HELIUS_API_KEY = priorPublicKey
+
+    if (priorRpc === undefined) delete process.env.SOLANA_RPC_URL
+    else process.env.SOLANA_RPC_URL = priorRpc
+
+    if (priorFallback === undefined) delete process.env.SOLANA_FALLBACK_RPC_URL
+    else process.env.SOLANA_FALLBACK_RPC_URL = priorFallback
+  }
 })
