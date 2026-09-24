@@ -110,3 +110,31 @@ test('finalized confirmation uses finalized transaction logs', async () => {
   assert.equal(confirmationCommitment, 'finalized')
   assert.equal(transactionCommitment, 'finalized')
 })
+
+test('expired blockhash is treated as success when the signature is already confirmed', async () => {
+  const connection = {
+    confirmTransaction: async () => {
+      throw new Error('TransactionExpiredBlockheightExceededError: Signature has expired: block height exceeded')
+    },
+    getSignatureStatuses: async () => ({
+      value: [{ err: null, confirmationStatus: 'confirmed' }],
+    }),
+    getTransaction: async () => null,
+  }
+
+  await assert.doesNotReject(confirmTransactionOrThrow(connection as any, strategy))
+})
+
+test('expired blockhash is treated as success when the signature is already processed', async () => {
+  const connection = {
+    confirmTransaction: async () => {
+      throw new Error('TransactionExpiredBlockheightExceededError: Signature has expired: block height exceeded')
+    },
+    getSignatureStatuses: async () => ({
+      value: [{ err: null, confirmationStatus: 'processed' }],
+    }),
+    getTransaction: async () => null,
+  }
+
+  await assert.doesNotReject(confirmTransactionOrThrow(connection as any, strategy))
+})

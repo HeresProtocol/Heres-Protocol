@@ -26,7 +26,7 @@ import {
   getPermissionPDA,
   getRelayerPubkey,
 } from './program'
-import { SOLANA_CONFIG, PLATFORM_FEE, MAGICBLOCK_ER } from '@/constants'
+import { SOLANA_CONFIG, PLATFORM_FEE, PRIORITY_FEE, MAGICBLOCK_ER } from '@/constants'
 import { debugLog } from '@/lib/log'
 import {
   decodeIntentCapsule,
@@ -157,6 +157,7 @@ export function getErProgram(wallet: HeresWallet): Program | null {
     return null
   }
 
+  assertErRegionMatchesValidator()
   const connection = new Connection(MAGICBLOCK_ER.ER_RPC_URL, {
     commitment: 'confirmed',
     wsEndpoint: MAGICBLOCK_ER.ER_WS_URL,
@@ -210,19 +211,74 @@ export function getTeeProgram(wallet: HeresWallet, token?: string): Program | nu
 // send helpers
 // ---------------------------------------------------------------------------
 
+function isExpiredBlockhashError(error: unknown): boolean {
+  const message = String((error as Error)?.message ?? error)
+  return message.includes('Blockhash not found')
+    || message.includes('expired: block height exceeded')
+    || message.includes('TransactionExpiredBlockheightExceededError')
+}
+
+/**
+ * Compute-budget instructions for a base-layer tx: a CU-limit ceiling plus a priority fee (compute-
+ * unit price). The priority fee keeps create/deposit/delegate txs from being the first dropped under
+ * devnet congestion - a frequent, silent cause of half-built capsules. Base layer only; MagicBlock
+ * ER/TEE txs have no fee market. See PRIORITY_FEE. Priced at 0 (or disabled via env) => limit only.
+ */
+function baseComputeBudgetIxs(units: number): TransactionInstruction[] {
+  const ixs: TransactionInstruction[] = [ComputeBudgetProgram.setComputeUnitLimit({ units })]
+  const price = PRIORITY_FEE.MICRO_LAMPORTS
+  if (Number.isFinite(price) && price > 0) {
+    ixs.push(ComputeBudgetProgram.setComputeUnitPrice({ microLamports: price }))
+  }
+  return ixs
+}
+
+/**
+ * Simulate a base-layer tx up front and throw on a definite error, so hard failures (insufficient SOL
+ * for the fee + rent, an account already in use) surface in ~1s instead of after the 30s confirm loop.
+ * The real sends keep skipPreflight (the ER-cloned program can mis-simulate); this is base-layer only.
+ * The thrown message is prefixed "Simulation failed" so the create-form catch can re-read and explain.
+ */
+async function simulateBaseOrThrow(
+  connection: Connection,
+  wallet: HeresWallet,
+  instructions: TransactionInstruction[]
+): Promise<void> {
+  const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash('confirmed')
+  const tx = new Transaction({ feePayer: wallet.publicKey!, blockhash, lastValidBlockHeight })
+  instructions.forEach((ix) => tx.add(ix))
+  const sim = await connection.simulateTransaction(tx)
+  if (sim.value.err) {
+    const logs = sim.value.logs?.join('\n') ?? ''
+    throw new Error('Simulation failed: ' + JSON.stringify(sim.value.err) + (logs ? '\n' + logs : ''))
+  }
+}
+
 /** Sign with the wallet, submit, and confirm on a base-layer connection. */
 async function sendBase(
   connection: Connection,
   wallet: HeresWallet,
   instructions: TransactionInstruction[]
 ): Promise<string> {
-  const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash('confirmed')
-  const tx = new Transaction({ feePayer: wallet.publicKey!, blockhash, lastValidBlockHeight })
-  instructions.forEach((ix) => tx.add(ix))
-  const signed = await wallet.signTransaction!(tx)
-  const sig = await connection.sendRawTransaction(signed.serialize(), { skipPreflight: true })
-  await confirmTransactionOrThrow(connection, { signature: sig, blockhash, lastValidBlockHeight })
-  return sig
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash('confirmed')
+    const tx = new Transaction({ feePayer: wallet.publicKey!, blockhash, lastValidBlockHeight })
+    instructions.forEach((ix) => tx.add(ix))
+    const signed = await wallet.signTransaction!(tx)
+    const sig = await connection.sendRawTransaction(signed.serialize(), { skipPreflight: true })
+
+    try {
+      await confirmTransactionOrThrow(connection, { signature: sig, blockhash, lastValidBlockHeight })
+      return sig
+    } catch (error) {
+      if (isExpiredBlockhashError(error) && attempt < 2) {
+        continue
+      }
+      throw error
+    }
+  }
+
+  throw new Error('Failed to send base transaction after multiple blockhash refresh attempts.')
 }
 
 /**
@@ -282,9 +338,50 @@ async function isAccountDelegated(pda: PublicKey): Promise<boolean> {
   return !!info && info.owner.equals(DELEGATION_PROGRAM_ID)
 }
 
+/**
+ * Guard against ER region drift, which otherwise surfaces only as a cryptic InvalidWritableAccount at
+ * arm/schedule time. The Switch is delegated to ACTIVE_VALIDATOR, so its ER copy lives on that
+ * validator's regional node; writing via a different region's ER RPC is rejected. Fail early and loud.
+ */
+function assertErRegionMatchesValidator(): void {
+  const { ACTIVE_VALIDATOR, ER_RPC_URL, VALIDATOR_ASIA, VALIDATOR_EU, VALIDATOR_US } = MAGICBLOCK_ER
+  const region =
+    ACTIVE_VALIDATOR === VALIDATOR_ASIA ? 'devnet-as'
+      : ACTIVE_VALIDATOR === VALIDATOR_EU ? 'devnet-eu'
+        : ACTIVE_VALIDATOR === VALIDATOR_US ? 'devnet-us'
+          : null
+  if (region && !ER_RPC_URL.includes(region)) {
+    throw new Error(
+      `ER region mismatch: the Switch validator ${ACTIVE_VALIDATOR} is in the ${region} region, but the ` +
+      `ER RPC is ${ER_RPC_URL}. Writes to the wrong region fail with InvalidWritableAccount. Set ` +
+      `NEXT_PUBLIC_ER_RPC_URL to https://${region}.magicblock.app (and NEXT_PUBLIC_ER_WS_URL to match).`
+    )
+  }
+}
+
 /** Connection to the regular ER (where the Switch is delegated under Workstream A). Token-free. */
 function regularErConnection(): Connection {
+  assertErRegionMatchesValidator()
   return new Connection(MAGICBLOCK_ER.ER_RPC_URL, { commitment: 'confirmed' })
+}
+
+/**
+ * True only when the Switch's regular-ER copy is an un-armed, pre-fire draft - i.e. a capsule whose
+ * creation stalled after delegation but before arm_capsule. This is the ONLY existing-capsule state
+ * that createDelegatedCapsule can safely resume: a live capsule is armed (is_active), and a fired one
+ * has executed_at set, so both are excluded. Token-free read; returns false on any read/decode failure
+ * so an unreadable capsule is treated as non-resumable (blocked as existing) rather than re-armed.
+ */
+export async function isCapsuleResumableDraftOnEr(owner: PublicKey): Promise<boolean> {
+  try {
+    const [capsulePDA] = getCapsulePDA(owner)
+    const info = await regularErConnection().getAccountInfo(capsulePDA)
+    if (!info) return false
+    const capsule = tryDecodeIntentCapsule(info.data)
+    return !!capsule && !capsule.isActive && capsule.executedAt == null
+  } catch {
+    return false
+  }
 }
 
 // Each on-chain Beneficiary carries a reserved[14] pad (future cross-chain heir field). The Anchor arg
@@ -302,11 +399,8 @@ const toNftAssignmentArg = (assignment: OnChainNftAssignment) => ({
 
 /**
  * Sign a batch of base-layer transactions with a SINGLE wallet approval (signAllTransactions), then
- * submit + confirm them strictly in order. Used so the create flow asks the user to approve once even
- * though create / deposit / delegate must execute as distinct on-chain transactions (delegate reads the
- * Switch the prior txs wrote, so they can't all be one instruction list). Falls back to one approval per
- * tx if the wallet lacks signAllTransactions. All txs share one blockhash; the ordered confirms finish
- * well inside its validity window.
+ * submit + confirm them strictly in order. If a wallet approval or RPC delay causes a blockhash to
+ * expire before confirmation, rebuild that one transaction with a fresh blockhash and retry.
  */
 async function sendBaseBatch(
   connection: Connection,
@@ -314,27 +408,20 @@ async function sendBaseBatch(
   txGroups: TransactionInstruction[][]
 ): Promise<string[]> {
   if (!wallet.publicKey || !wallet.signTransaction) throw new Error('Wallet not connected')
-  const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash('confirmed')
-  const txs = txGroups.map((ixs) => {
-    const tx = new Transaction({ feePayer: wallet.publicKey!, blockhash, lastValidBlockHeight })
-    ixs.forEach((ix) => tx.add(ix))
-    return tx
-  })
-
-  let signed: Transaction[]
-  if (wallet.signAllTransactions) {
-    signed = await wallet.signAllTransactions(txs)
-  } else {
-    signed = []
-    for (const tx of txs) signed.push(await wallet.signTransaction(tx))
-  }
 
   const sigs: string[] = []
-  for (const tx of signed) {
-    const sig = await connection.sendRawTransaction(tx.serialize(), { skipPreflight: true })
+
+  for (const ixs of txGroups) {
+    const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash('confirmed')
+    const tx = new Transaction({ feePayer: wallet.publicKey!, blockhash, lastValidBlockHeight })
+    ixs.forEach((ix) => tx.add(ix))
+
+    const signed = await wallet.signTransaction(tx)
+    const sig = await connection.sendRawTransaction(signed.serialize(), { skipPreflight: true })
     await confirmTransactionOrThrow(connection, { signature: sig, blockhash, lastValidBlockHeight })
     sigs.push(sig)
   }
+
   return sigs
 }
 
@@ -748,6 +835,73 @@ export type CreateDelegatedCapsuleParams = {
  * regular-ER approval (schedule, token-free), one auth-token signature, one TEE approval (private
  * beneficiaries). Delegations must run as distinct txs (each reads state a prior tx wrote).
  */
+/** Build the delegate-Switch-to-regular-ER instruction (11 accounts, no permission). */
+async function buildDelegateSwitchIx(
+  program: any,
+  owner: PublicKey,
+  programId: PublicKey,
+  capsulePDA: PublicKey,
+  erValidator: PublicKey
+): Promise<TransactionInstruction> {
+  const [swBufferPDA] = getBufferPDA(capsulePDA, BUFFER_SEED_PROGRAM_ID)
+  const [swRecordPDA] = getDelegationRecordPDA(capsulePDA, DELEGATION_PROGRAM_ID)
+  const [swMetaPDA] = getDelegationMetadataPDA(capsulePDA, DELEGATION_PROGRAM_ID)
+  return program.methods
+    .delegateCapsule()
+    .accountsPartial({
+      payer: owner,
+      owner,
+      validator: erValidator,
+      bufferPda: swBufferPDA,
+      delegationRecordPda: swRecordPDA,
+      delegationMetadataPda: swMetaPDA,
+      pda: capsulePDA,
+      magicProgram: MAGIC_PROGRAM_ID,
+      delegationProgram: DELEGATION_PROGRAM_ID,
+      systemProgram: SystemProgram.programId,
+      ownerProgram: programId,
+    } as any)
+    .instruction()
+}
+
+/** Build the delegate-BeneficiarySet-(+ PER permission)-to-TEE instruction (16 accounts). */
+async function buildDelegateBenIx(
+  program: any,
+  owner: PublicKey,
+  programId: PublicKey,
+  beneficiarySetPDA: PublicKey,
+  permissionPDA: PublicKey,
+  teeValidator: PublicKey
+): Promise<TransactionInstruction> {
+  const [bsBufferPDA] = getBufferPDA(beneficiarySetPDA, BUFFER_SEED_PROGRAM_ID)
+  const [bsRecordPDA] = getDelegationRecordPDA(beneficiarySetPDA, DELEGATION_PROGRAM_ID)
+  const [bsMetaPDA] = getDelegationMetadataPDA(beneficiarySetPDA, DELEGATION_PROGRAM_ID)
+  const [bufferPermission] = getBufferPDA(permissionPDA, PERMISSION_PROGRAM_ID)
+  const [delegationRecordPermission] = getDelegationRecordPDA(permissionPDA, DELEGATION_PROGRAM_ID)
+  const [delegationMetadataPermission] = getDelegationMetadataPDA(permissionPDA, DELEGATION_PROGRAM_ID)
+  return program.methods
+    .delegateBeneficiaries()
+    .accountsPartial({
+      payer: owner,
+      owner,
+      validator: teeValidator,
+      bufferPda: bsBufferPDA,
+      delegationRecordPda: bsRecordPDA,
+      delegationMetadataPda: bsMetaPDA,
+      pda: beneficiarySetPDA,
+      magicProgram: MAGIC_PROGRAM_ID,
+      delegationProgram: DELEGATION_PROGRAM_ID,
+      systemProgram: SystemProgram.programId,
+      permissionProgram: PERMISSION_PROGRAM_ID,
+      permission: permissionPDA,
+      bufferPermission,
+      delegationRecordPermission,
+      delegationMetadataPermission,
+      ownerProgram: programId,
+    } as any)
+    .instruction()
+}
+
 export async function createDelegatedCapsule(
   wallet: HeresWallet,
   params: CreateDelegatedCapsuleParams
@@ -789,144 +943,142 @@ export async function createDelegatedCapsule(
     ? new PublicKey(SOLANA_CONFIG.PLATFORM_FEE_RECIPIENT)
     : programId // sentinel when no fee recipient is configured
 
-  // ---- base ix 1: create the Switch + BeneficiarySet + Vault ----
-  const targetDateBN = params.targetDateSeconds != null ? new BN(params.targetDateSeconds) : null
-  const createIx = await program.methods
-    .createCapsule(new BN(params.inactivitySeconds), hb, targetDateBN)
-    .accountsPartial({
-      capsule: capsulePDA,
-      beneficiarySet: beneficiarySetPDA,
-      vault: vaultPDA,
-      owner,
-      feeConfig: feeConfigPDA,
-      platformFeeRecipient,
-      systemProgram: SystemProgram.programId,
-    })
-    .instruction()
+  const baseConn = getSolanaConnection()
 
-  // ---- base ix 2+: deposit assets (Vault is never delegated) ----
-  const baseConnection = getSolanaConnection()
-  const depositIxs: TransactionInstruction[] = []
-  if (nftAssignments.length > 0) {
-    for (const assignment of nftAssignments) {
-      const tokenProgram = await validateStandardNft(baseConnection, owner, assignment.mint)
-      depositIxs.push(
-        await program.methods
-          .deposit(new BN(1))
-          .accountsPartial({
-            capsule: capsulePDA,
-            vault: vaultPDA,
-            owner,
-            systemProgram: SystemProgram.programId,
-            tokenProgram,
-            associatedTokenProgram: SPL_ASSOCIATED_TOKEN_ACCOUNT_PROGRAM_ID,
-            mint: assignment.mint,
-            sourceTokenAccount: ataFor(assignment.mint, owner, tokenProgram),
-            vaultTokenAccount: ataFor(assignment.mint, vaultPDA, tokenProgram),
-          })
-          .instruction()
-      )
-    }
-  } else {
-    if (fungibleDeposits.length === 0) throw new Error('At least one deposit amount is required')
-    for (const deposit of fungibleDeposits) {
-      const mint = deposit.mint ?? null
-      const amt = deposit.amountBaseUnits instanceof BN
-        ? deposit.amountBaseUnits
-        : new BN(deposit.amountBaseUnits)
-      if (amt.lte(new BN(0))) throw new Error('Deposit amounts must be greater than zero')
-      const depositTokenProgram = mint ? await resolveTokenProgram(baseConnection, mint) : null
-      const depositAccounts: any = mint
-        ? {
-            capsule: capsulePDA,
-            vault: vaultPDA,
-            owner,
-            systemProgram: SystemProgram.programId,
-            tokenProgram: depositTokenProgram,
-            associatedTokenProgram: SPL_ASSOCIATED_TOKEN_ACCOUNT_PROGRAM_ID,
-            mint,
-            sourceTokenAccount: ataFor(mint, owner, depositTokenProgram!),
-            vaultTokenAccount: ataFor(mint, vaultPDA, depositTokenProgram!),
-          }
-        : {
-            capsule: capsulePDA,
-            vault: vaultPDA,
-            owner,
-            systemProgram: SystemProgram.programId,
-            tokenProgram: null,
-            associatedTokenProgram: null,
-            mint: null,
-            sourceTokenAccount: null,
-            vaultTokenAccount: null,
-          }
-      depositIxs.push(await program.methods.deposit(amt).accountsPartial(depositAccounts).instruction())
-    }
+  // -------------------------------------------------------------------------
+  // Resume support. A prior attempt can die mid-orchestration (base batch ->
+  // delegation -> TEE seal -> ER arm/schedule), leaving a half-built capsule.
+  // The on-chain guards make the tail non-idempotent (re-seal / re-arm error),
+  // so detect how far the last attempt got and continue from there. Deposits are
+  // NEVER re-run (non-idempotent - they would double-charge): a funded-but-
+  // undelegated draft is surfaced for recovery instead of auto-resumed.
+  // -------------------------------------------------------------------------
+  const [capsuleInfo0, benInfo0] = await baseConn.getMultipleAccountsInfo(
+    [capsulePDA, beneficiarySetPDA],
+    'confirmed'
+  )
+  const capsuleExists = !!capsuleInfo0
+  const capsuleDelegated = !!capsuleInfo0 && capsuleInfo0.owner.equals(DELEGATION_PROGRAM_ID)
+  const benDelegated = !!benInfo0 && benInfo0.owner.equals(DELEGATION_PROGRAM_ID)
+
+  // W1: the capsule exists but is not delegated => the base batch stopped between create and delegate,
+  // so deposits may be only partially applied. Re-running them would double-charge; surface recovery.
+  if (capsuleExists && !capsuleDelegated) {
+    throw new Error(
+      'An incomplete capsule draft exists from a previous attempt (funded but not delegated). ' +
+        'Open My Capsule to recover or cancel it before creating a new one.'
+    )
   }
 
-  // ---- base ix 3: delegate the Switch to the regular ER (no permission, 11 accounts) ----
-  const [swBufferPDA] = getBufferPDA(capsulePDA, BUFFER_SEED_PROGRAM_ID)
-  const [swRecordPDA] = getDelegationRecordPDA(capsulePDA, DELEGATION_PROGRAM_ID)
-  const [swMetaPDA] = getDelegationMetadataPDA(capsulePDA, DELEGATION_PROGRAM_ID)
-  const delegateSwitchIx = await program.methods
-    .delegateCapsule()
-    .accountsPartial({
-      payer: owner,
-      owner,
-      validator: erValidator,
-      bufferPda: swBufferPDA,
-      delegationRecordPda: swRecordPDA,
-      delegationMetadataPda: swMetaPDA,
-      pda: capsulePDA,
-      magicProgram: MAGIC_PROGRAM_ID,
-      delegationProgram: DELEGATION_PROGRAM_ID,
-      systemProgram: SystemProgram.programId,
-      ownerProgram: programId,
-    } as any)
-    .instruction()
+  let baseSigs: string[] = []
 
-  // ---- base ix 4: delegate the BeneficiarySet (+ PER permission) to the TEE (16 accounts) ----
-  const [bsBufferPDA] = getBufferPDA(beneficiarySetPDA, BUFFER_SEED_PROGRAM_ID)
-  const [bsRecordPDA] = getDelegationRecordPDA(beneficiarySetPDA, DELEGATION_PROGRAM_ID)
-  const [bsMetaPDA] = getDelegationMetadataPDA(beneficiarySetPDA, DELEGATION_PROGRAM_ID)
-  const [bufferPermission] = getBufferPDA(permissionPDA, PERMISSION_PROGRAM_ID)
-  const [delegationRecordPermission] = getDelegationRecordPDA(permissionPDA, DELEGATION_PROGRAM_ID)
-  const [delegationMetadataPermission] = getDelegationMetadataPDA(permissionPDA, DELEGATION_PROGRAM_ID)
-  const delegateBenIx = await program.methods
-    .delegateBeneficiaries()
-    .accountsPartial({
-      payer: owner,
-      owner,
-      validator: teeValidator,
-      bufferPda: bsBufferPDA,
-      delegationRecordPda: bsRecordPDA,
-      delegationMetadataPda: bsMetaPDA,
-      pda: beneficiarySetPDA,
-      magicProgram: MAGIC_PROGRAM_ID,
-      delegationProgram: DELEGATION_PROGRAM_ID,
-      systemProgram: SystemProgram.programId,
-      permissionProgram: PERMISSION_PROGRAM_ID,
-      permission: permissionPDA,
-      bufferPermission,
-      delegationRecordPermission,
-      delegationMetadataPermission,
-      ownerProgram: programId,
-    } as any)
-    .instruction()
+  if (!capsuleExists) {
+    // ---- W0 (fresh): create the Switch + BeneficiarySet + Vault, fund the vault, delegate both PDAs ----
+    const targetDateBN = params.targetDateSeconds != null ? new BN(params.targetDateSeconds) : null
+    const createIx = await program.methods
+      .createCapsule(new BN(params.inactivitySeconds), hb, targetDateBN)
+      .accountsPartial({
+        capsule: capsulePDA,
+        beneficiarySet: beneficiarySetPDA,
+        vault: vaultPDA,
+        owner,
+        feeConfig: feeConfigPDA,
+        platformFeeRecipient,
+        systemProgram: SystemProgram.programId,
+      })
+      .instruction()
 
-  // One wallet approval for the whole base setup. Each delegate carries a CU bump: the create +
-  // permission/delegation CPIs exceed the 200k default.
-  params.onStep?.(
-    depositIxs.length > 1
-      ? `Creating capsule and funding ${depositIxs.length} assets...`
-      : 'Creating, funding & delegating capsule...'
-  )
-  const baseConn = getSolanaConnection()
-  const baseSigs = await sendBaseBatch(baseConn, wallet, [
-    [createIx],
-    ...depositIxs.map((ix) => [ix]),
-    [ComputeBudgetProgram.setComputeUnitLimit({ units: 400_000 }), delegateSwitchIx],
-    [ComputeBudgetProgram.setComputeUnitLimit({ units: 400_000 }), delegateBenIx],
-  ])
+    // Deposit ixs are built ONLY on a fresh create: on any resume the owner's assets have already moved
+    // into the vault, so re-deriving/re-sending these would fail or double-charge.
+    const depositIxs: TransactionInstruction[] = []
+    if (nftAssignments.length > 0) {
+      for (const assignment of nftAssignments) {
+        const tokenProgram = await validateStandardNft(baseConn, owner, assignment.mint)
+        depositIxs.push(
+          await program.methods
+            .deposit(new BN(1))
+            .accountsPartial({
+              capsule: capsulePDA,
+              vault: vaultPDA,
+              owner,
+              systemProgram: SystemProgram.programId,
+              tokenProgram,
+              associatedTokenProgram: SPL_ASSOCIATED_TOKEN_ACCOUNT_PROGRAM_ID,
+              mint: assignment.mint,
+              sourceTokenAccount: ataFor(assignment.mint, owner, tokenProgram),
+              vaultTokenAccount: ataFor(assignment.mint, vaultPDA, tokenProgram),
+            })
+            .instruction()
+        )
+      }
+    } else {
+      if (fungibleDeposits.length === 0) throw new Error('At least one deposit amount is required')
+      for (const deposit of fungibleDeposits) {
+        const mint = deposit.mint ?? null
+        const amt = deposit.amountBaseUnits instanceof BN
+          ? deposit.amountBaseUnits
+          : new BN(deposit.amountBaseUnits)
+        if (amt.lte(new BN(0))) throw new Error('Deposit amounts must be greater than zero')
+        const depositTokenProgram = mint ? await resolveTokenProgram(baseConn, mint) : null
+        const depositAccounts: any = mint
+          ? {
+              capsule: capsulePDA,
+              vault: vaultPDA,
+              owner,
+              systemProgram: SystemProgram.programId,
+              tokenProgram: depositTokenProgram,
+              associatedTokenProgram: SPL_ASSOCIATED_TOKEN_ACCOUNT_PROGRAM_ID,
+              mint,
+              sourceTokenAccount: ataFor(mint, owner, depositTokenProgram!),
+              vaultTokenAccount: ataFor(mint, vaultPDA, depositTokenProgram!),
+            }
+          : {
+              capsule: capsulePDA,
+              vault: vaultPDA,
+              owner,
+              systemProgram: SystemProgram.programId,
+              tokenProgram: null,
+              associatedTokenProgram: null,
+              mint: null,
+              sourceTokenAccount: null,
+              vaultTokenAccount: null,
+            }
+        depositIxs.push(await program.methods.deposit(amt).accountsPartial(depositAccounts).instruction())
+      }
+    }
+
+    const delegateSwitchIx = await buildDelegateSwitchIx(program, owner, programId, capsulePDA, erValidator)
+    const delegateBenIx = await buildDelegateBenIx(program, owner, programId, beneficiarySetPDA, permissionPDA, teeValidator)
+
+    // One wallet approval for the whole base setup. Every leg carries a CU-limit + priority fee
+    // (baseComputeBudgetIxs): the create + permission/delegation CPIs exceed the 200k default, and an
+    // unprioritized tx is the first dropped under devnet congestion (a frequent half-build cause).
+    params.onStep?.(
+      depositIxs.length > 1
+        ? `Creating capsule and funding ${depositIxs.length} assets...`
+        : 'Creating, funding & delegating capsule...'
+    )
+
+    // Fail fast: simulate the create leg up front so hard errors (insufficient SOL for the fee + rent,
+    // an already-in-use capsule) surface in ~1s instead of after the 30s confirm loop below.
+    await simulateBaseOrThrow(baseConn, wallet, [...baseComputeBudgetIxs(PRIORITY_FEE.CU_LIMIT_CREATE), createIx])
+
+    baseSigs = await sendBaseBatch(baseConn, wallet, [
+      [...baseComputeBudgetIxs(PRIORITY_FEE.CU_LIMIT_CREATE), createIx],
+      ...depositIxs.map((ix) => [...baseComputeBudgetIxs(PRIORITY_FEE.CU_LIMIT_DEPOSIT), ix]),
+      [...baseComputeBudgetIxs(PRIORITY_FEE.CU_LIMIT_DELEGATE), delegateSwitchIx],
+      [...baseComputeBudgetIxs(PRIORITY_FEE.CU_LIMIT_DELEGATE), delegateBenIx],
+    ])
+  } else if (capsuleDelegated && !benDelegated) {
+    // ---- W2 (resume): the Switch is delegated, so create + all deposits already confirmed (the batch
+    // confirms in order), but the BeneficiarySet delegation never landed. Re-run ONLY that leg. ----
+    params.onStep?.('Resuming: delegating beneficiary set...')
+    const delegateBenIx = await buildDelegateBenIx(program, owner, programId, beneficiarySetPDA, permissionPDA, teeValidator)
+    baseSigs = await sendBaseBatch(baseConn, wallet, [
+      [...baseComputeBudgetIxs(PRIORITY_FEE.CU_LIMIT_DELEGATE), delegateBenIx],
+    ])
+  }
+  // else (W3-W6): both PDAs are already delegated - skip the base layer entirely and resume the tail.
 
   // Wait for BOTH base accounts to flip to the delegation program.
   params.onStep?.('Waiting for delegations...')
@@ -950,38 +1102,58 @@ export async function createDelegatedCapsule(
     if (info) break
     await sleep(2500)
   }
-  const updateIntentIx = await program.methods
-    .updateIntent(params.beneficiaries.map(toBenArg))
-    .accountsPartial({ beneficiarySet: beneficiarySetPDA, owner })
-    .instruction()
-  const teeIxs = [updateIntentIx]
-  if (nftAssignments.length > 0) {
+  // seal_inheritance rejects a second seal (InheritanceAlreadySealed), so skip the TEE write entirely if
+  // a prior attempt already sealed. When resuming past a seal, the original salt is gone from this
+  // process - recompute the exact commitment from the salt stored on-chain so arm_capsule receives the
+  // value the seal produced.
+  let teeSig = ''
+  let configCommitment: Uint8Array
+  const sealedInfo = await teeConn.getAccountInfo(beneficiarySetPDA).catch(() => null)
+  const sealedSet = sealedInfo ? tryDecodeBeneficiarySetData(sealedInfo.data) : null
+  if (sealedSet?.isSealed) {
+    if (!sealedSet.configSalt) {
+      throw new Error('This capsule is sealed but its salt could not be read. Recover the capsule and retry.')
+    }
+    configCommitment = await createInheritanceCommitment(
+      owner,
+      sealedSet.beneficiaries,
+      sealedSet.nftAssignments,
+      Uint8Array.from(sealedSet.configSalt)
+    )
+  } else {
+    const updateIntentIx = await program.methods
+      .updateIntent(params.beneficiaries.map(toBenArg))
+      .accountsPartial({ beneficiarySet: beneficiarySetPDA, owner })
+      .instruction()
+    const teeIxs = [updateIntentIx]
+    if (nftAssignments.length > 0) {
+      teeIxs.push(
+        await program.methods
+          .updateNftAssignments(nftAssignments.map(toNftAssignmentArg))
+          .accountsPartial({ beneficiarySet: beneficiarySetPDA, owner })
+          .instruction()
+      )
+    }
+    const configSalt = createInheritanceSalt()
+    configCommitment = await createInheritanceCommitment(
+      owner,
+      params.beneficiaries,
+      nftAssignments,
+      configSalt
+    )
     teeIxs.push(
       await program.methods
-        .updateNftAssignments(nftAssignments.map(toNftAssignmentArg))
+        .sealInheritance(Array.from(configSalt), Array.from(configCommitment))
         .accountsPartial({ beneficiarySet: beneficiarySetPDA, owner })
         .instruction()
     )
+    params.onStep?.(
+      nftAssignments.length > 0
+        ? 'Setting and sealing private NFT recipients...'
+        : 'Setting and sealing private beneficiaries...'
+    )
+    teeSig = await sendEr(teeConn, wallet, teeIxs)
   }
-  const configSalt = createInheritanceSalt()
-  const configCommitment = await createInheritanceCommitment(
-    owner,
-    params.beneficiaries,
-    nftAssignments,
-    configSalt
-  )
-  teeIxs.push(
-    await program.methods
-      .sealInheritance(Array.from(configSalt), Array.from(configCommitment))
-      .accountsPartial({ beneficiarySet: beneficiarySetPDA, owner })
-      .instruction()
-  )
-  params.onStep?.(
-    nftAssignments.length > 0
-      ? 'Setting and sealing private NFT recipients...'
-      : 'Setting and sealing private beneficiaries...'
-  )
-  const teeSig = await sendEr(teeConn, wallet, teeIxs)
 
   // ---- regular ER: arm the sealed Switch and schedule execution in one transaction ----
   params.onStep?.('Waiting for ER sync...')
@@ -991,10 +1163,9 @@ export async function createDelegatedCapsule(
     if (info) break
     await sleep(2500)
   }
-  const armIx = await program.methods
-    .armCapsule(Array.from(configCommitment))
-    .accountsPartial({ capsule: capsulePDA, owner })
-    .instruction()
+  const armedInfo = await erConn.getAccountInfo(capsulePDA).catch(() => null)
+  const alreadyArmed = !!(armedInfo && tryDecodeIntentCapsule(armedInfo.data)?.isActive)
+
   const taskId = params.schedule?.taskId ?? new BN(Date.now())
   const executionIntervalMillis =
     params.schedule?.executionIntervalMillis ?? new BN(MAGICBLOCK_ER.CRANK_DEFAULT_INTERVAL_MS || 10000)
@@ -1003,10 +1174,37 @@ export async function createDelegatedCapsule(
     .scheduleExecuteIntent({ taskId, executionIntervalMillis, iterations })
     .accountsPartial({ magicProgram: MAGIC_PROGRAM_ID, payer: owner, capsule: capsulePDA })
     .instruction()
-  params.onStep?.('Arming capsule and scheduling autonomous crank...')
-  const scheduleSig = await sendEr(erConn, wallet, [armIx, scheduleIx])
 
-  return { baseSigs, teeSig, scheduleSig, capsule: capsulePDA, token }
+  let scheduleSig = ''
+  if (alreadyArmed) {
+    // arm_capsule rejects an already-armed Switch (CapsuleNotDraft). There is no on-chain "is scheduled"
+    // flag and task_id is time-based, so a re-schedule can create a duplicate crank - but execute_intent
+    // is flip-only/idempotent (a duplicate is merely wasteful) whereas a MISSING crank breaks autonomous
+    // execution, so ensure one exists, best-effort.
+    params.onStep?.('Resuming: ensuring the autonomous crank is scheduled...')
+    try {
+      scheduleSig = await sendEr(erConn, wallet, [scheduleIx])
+    } catch (err) {
+      console.warn('[create] best-effort schedule on an already-armed capsule failed (likely already scheduled):', err)
+    }
+  } else {
+    const armIx = await program.methods
+      .armCapsule(Array.from(configCommitment))
+      .accountsPartial({ capsule: capsulePDA, owner })
+      .instruction()
+    params.onStep?.('Arming capsule and scheduling autonomous crank...')
+    scheduleSig = await sendEr(erConn, wallet, [armIx, scheduleIx])
+  }
+
+  // On a resume the base batch is skipped (baseSigs empty); surface the tail sig so the UI still has a
+  // reference for this attempt.
+  return {
+    baseSigs: baseSigs.length ? baseSigs : [scheduleSig || teeSig].filter(Boolean),
+    teeSig,
+    scheduleSig,
+    capsule: capsulePDA,
+    token,
+  }
 }
 
 /**

@@ -41,6 +41,7 @@ export default function CreatePage() {
     error,
     fieldErrors,
     existingCapsule,
+    resumableCapsule,
     existingCapsuleAddress,
     existingCapsuleCheck,
     existingCapsuleCheckError,
@@ -863,6 +864,11 @@ export default function CreatePage() {
                         This wallet already has an active or incomplete capsule. Open My Capsule to manage or cancel it before creating another.
                       </div>
                     )}
+                    {resumableCapsule && (
+                      <div className="rounded-xl border border-amber-400/30 bg-amber-400/10 p-4 text-sm text-amber-200">
+                        A previous attempt created this capsule but didn&apos;t finish setup. Complete the form and submit to resume from where it stopped — you won&apos;t be charged the creation fee again.
+                      </div>
+                    )}
                   </div>
 
                   <div className="rounded-2xl border border-Heres-border bg-Heres-surface/25 p-4">
@@ -923,7 +929,11 @@ export default function CreatePage() {
                           loading={isPending}
                           className="w-full"
                         >
-                          {isPending ? (currentStep || 'Creating capsule...') : 'Create Capsule'}
+                          {isPending
+                            ? (currentStep || 'Creating capsule...')
+                            : resumableCapsule
+                              ? 'Finish Setup'
+                              : 'Create Capsule'}
                         </Button>
                         <p className="mt-3 text-xs text-Heres-muted">
                           Final creation is enabled after all steps above are complete and your wallet can sign the encrypted payload.

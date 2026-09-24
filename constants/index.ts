@@ -148,6 +148,24 @@ export const PLATFORM_FEE = {
   CREATION_FEE_LAMPORTS: 50_000_000,
 } as const
 
+/**
+ * Priority fee for base-layer (Solana devnet) transactions. Devnet has no real fee market, but
+ * unprioritized txs are the first dropped when a leader slot is congested - a frequent, silent cause
+ * of failed capsule creation (the create/deposit/delegate legs get dropped and the capsule is left
+ * half-built). A small compute-unit price makes creation resilient for a negligible cost
+ * (microLamports x CU limit; e.g. 50k uLamports x 400k CU ~= 0.00002 SOL). Applies to the BASE layer
+ * only - MagicBlock ER/TEE txs do not use a fee market. Set NEXT_PUBLIC_PRIORITY_FEE_MICRO_LAMPORTS=0
+ * to disable.
+ */
+export const PRIORITY_FEE = {
+  MICRO_LAMPORTS: Number(process.env.NEXT_PUBLIC_PRIORITY_FEE_MICRO_LAMPORTS ?? 50_000),
+  // Compute-unit ceilings per base tx type. create + deposit ride the 200k default today; a modest
+  // bump covers the fee-transfer + token CPIs without over-reserving. Delegation CPIs need the most.
+  CU_LIMIT_CREATE: 300_000,
+  CU_LIMIT_DEPOSIT: 250_000,
+  CU_LIMIT_DELEGATE: 400_000,
+} as const
+
 // Magicblock ER (Ephemeral Rollup) - Devnet validators
 export const MAGICBLOCK_ER = {
   DELEGATION_PROGRAM_ID: 'DELeGGvXpWV2fqJUhqcF5ZSYMS4JTLjteaAMARRSaeSh',
@@ -155,7 +173,10 @@ export const MAGICBLOCK_ER = {
   // The buffer/delegation PDAs are owned by our program, so this is always the program ID.
   BUFFER_SEED_PROGRAM_ID: idl.address,
   MAGIC_CONTEXT: process.env.NEXT_PUBLIC_MAGIC_CONTEXT || 'MagicContext1111111111111111111111111111111',
-  ER_RPC_URL: process.env.NEXT_PUBLIC_ER_RPC_URL || 'https://devnet-eu.magicblock.app',
+  // MUST match ACTIVE_VALIDATOR's region: the Switch is delegated to that validator, and writes sent to
+  // a different region's ER node fail with InvalidWritableAccount. Default validator is Asia (MAS1...),
+  // so the default RPC is devnet-as. See assertErRegionMatchesValidator in lib/solana.ts.
+  ER_RPC_URL: process.env.NEXT_PUBLIC_ER_RPC_URL || 'https://devnet-as.magicblock.app',
   ER_WS_URL: process.env.NEXT_PUBLIC_ER_WS_URL || 'wss://devnet-router.magicblock.app',
   ROUTER_DEVNET: 'https://devnet-eu.magicblock.app',
   ROUTER_WS: 'wss://devnet-router.magicblock.app',

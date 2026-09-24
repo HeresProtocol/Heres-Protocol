@@ -11,6 +11,7 @@ import {
   createDelegatedCapsule,
   getCapsule,
   getCapsuleAccountLocations,
+  isCapsuleResumableDraftOnEr,
   registerCapsuleOwnerForAutomation,
 } from '@/lib/solana'
 import { getCapsulePDA } from '@/lib/program'
@@ -177,6 +178,9 @@ export function useCreateCapsuleForm() {
   // 'beneficiaries._shares'). Populated on submit; cleared the moment the user edits any input below.
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({})
   const [existingCapsule, setExistingCapsule] = useState<boolean>(false)
+  // A capsule whose creation stalled mid-orchestration (delegated but never armed). Unlike an existing
+  // (live/fired) capsule it does NOT block the builder: submitting resumes it via createDelegatedCapsule.
+  const [resumableCapsule, setResumableCapsule] = useState<boolean>(false)
   const [existingCapsuleAddress, setExistingCapsuleAddress] = useState<string | null>(null)
   const [existingCapsuleCheck, setExistingCapsuleCheck] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle')
   const [existingCapsuleCheckError, setExistingCapsuleCheckError] = useState<string | null>(null)
@@ -249,6 +253,7 @@ export function useCreateCapsuleForm() {
     const checkExistingCapsule = async () => {
       if (!connected || !publicKey) {
         setExistingCapsule(false)
+        setResumableCapsule(false)
         setExistingCapsuleAddress(null)
         setExistingCapsuleCheck('idle')
         setExistingCapsuleCheckError(null)
@@ -264,10 +269,16 @@ export function useCreateCapsuleForm() {
       try {
         const locations = await getCapsuleAccountLocations(publicKey)
         if (locations.switch !== 'missing') {
-          setExistingCapsule(true)
+          // A delegated-but-un-armed draft is a stalled creation we can resume; every other existing
+          // state (live, fired, or an undelegated base capsule) blocks the builder as before.
+          const resumable =
+            locations.switch === 'delegated' && (await isCapsuleResumableDraftOnEr(publicKey))
+          setResumableCapsule(resumable)
+          setExistingCapsule(!resumable)
           setExistingCapsuleAddress(locations.switchAddress)
         } else if (hasExistingCapsuleAccounts(locations)) {
           setExistingCapsule(false)
+          setResumableCapsule(false)
           setExistingCapsuleAddress(null)
           setExistingCapsuleCheckError(
             'Existing capsule data needs recovery before a new capsule can be created. Refresh once, then contact support if this message remains.'
@@ -276,12 +287,14 @@ export function useCreateCapsuleForm() {
           return
         } else {
           setExistingCapsule(false)
+          setResumableCapsule(false)
           setExistingCapsuleAddress(null)
         }
         setExistingCapsuleCheck('ready')
       } catch (err) {
         console.error('Error checking for existing capsule:', err)
         setExistingCapsule(false)
+        setResumableCapsule(false)
         setExistingCapsuleAddress(null)
         setExistingCapsuleCheckError(
           'Heres could not check this wallet for an existing capsule. Retry before creating.'
@@ -569,13 +582,23 @@ export function useCreateCapsuleForm() {
 
     try {
       const accountLocations = await getCapsuleAccountLocations(publicKey)
+      let isResume = false
       if (accountLocations.switch !== 'missing') {
-        setExistingCapsule(true)
-        setExistingCapsuleAddress(accountLocations.switchAddress)
-        setExistingCapsuleCheck('ready')
-        return
-      }
-      if (hasExistingCapsuleAccounts(accountLocations)) {
+        // Only a delegated-but-un-armed draft (a stalled creation) is resumable; anything else is a
+        // live/fired/undelegated capsule that must block a new create.
+        const resumable =
+          accountLocations.switch === 'delegated' && (await isCapsuleResumableDraftOnEr(publicKey))
+        if (!resumable) {
+          setExistingCapsule(true)
+          setResumableCapsule(false)
+          setExistingCapsuleAddress(accountLocations.switchAddress)
+          setExistingCapsuleCheck('ready')
+          return
+        }
+        // Resume: createDelegatedCapsule continues from the first incomplete leg. The off-chain CRE
+        // secret was already registered in the first attempt, so that step is skipped below.
+        isResume = true
+      } else if (hasExistingCapsuleAccounts(accountLocations)) {
         throw new Error(
           'Existing capsule data needs recovery before a new capsule can be created. Refresh once, then contact support if this message remains.'
         )
@@ -585,40 +608,43 @@ export function useCreateCapsuleForm() {
 
       // ---- Off-chain CRE: encrypt the human intent statement and register it (decoupled from chain).
       // The lean on-chain capsule never stores the statement; only the beneficiary split lives on-chain.
+      // On a resume this already ran in the first attempt, so skip the signature + registration here.
       const normalizedEmail = intentEmail.trim().toLowerCase()
       const intentMessage = intent.trim()
       const recipientEmailHash = await sha256Hex(normalizedEmail)
-      const messageHash = await sha256Hex(intentMessage)
-      const timestamp = Date.now()
-      const signatureMessage = buildIntentSignedMessage({
-        action: 'register-secret',
-        owner: publicKey.toBase58(),
-        timestamp,
-        recipientEmailHash,
-        messageHash,
-      })
-      const signatureBytes = await signMessage(new TextEncoder().encode(signatureMessage))
-      const signature = bytesToBase64(signatureBytes)
-
-      const secretRes = await fetch('/api/intent-delivery/register', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
+      if (!isResume) {
+        const messageHash = await sha256Hex(intentMessage)
+        const timestamp = Date.now()
+        const signatureMessage = buildIntentSignedMessage({
+          action: 'register-secret',
           owner: publicKey.toBase58(),
-          recipientEmail: normalizedEmail,
-          message: intentMessage,
           timestamp,
-          signature,
-        }),
-      })
-      let secretJson: any
-      try {
-        secretJson = await secretRes.json()
-      } catch {
-        throw new Error(`CRE register returned ${secretRes.status} with empty response`)
-      }
-      if (!secretRes.ok) {
-        throw new Error(secretJson?.error || 'Failed to register CRE secret')
+          recipientEmailHash,
+          messageHash,
+        })
+        const signatureBytes = await signMessage(new TextEncoder().encode(signatureMessage))
+        const signature = bytesToBase64(signatureBytes)
+
+        const secretRes = await fetch('/api/intent-delivery/register', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            owner: publicKey.toBase58(),
+            recipientEmail: normalizedEmail,
+            message: intentMessage,
+            timestamp,
+            signature,
+          }),
+        })
+        let secretJson: any
+        try {
+          secretJson = await secretRes.json()
+        } catch {
+          throw new Error(`CRE register returned ${secretRes.status} with empty response`)
+        }
+        if (!secretRes.ok) {
+          throw new Error(secretJson?.error || 'Failed to register CRE secret')
+        }
       }
 
       // Fungible assets use proportional shares. NFT capsules still store their unique recipients as
@@ -967,6 +993,7 @@ export function useCreateCapsuleForm() {
     error,
     fieldErrors,
     existingCapsule,
+    resumableCapsule,
     existingCapsuleAddress,
     existingCapsuleCheck,
     existingCapsuleCheckError,

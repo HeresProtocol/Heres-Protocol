@@ -63,6 +63,8 @@ export function decodeBeneficiarySet(data: Buffer | Uint8Array): {
   owner: OnChainBeneficiary['pubkey']
   version: number
   isSealed: boolean
+  /** The 32-byte private seal salt (reserved[1..33]) when sealed, else null. */
+  configSalt: number[] | null
   beneficiaries: OnChainBeneficiary[]
   nftAssignments: OnChainNftAssignment[]
 } {
@@ -75,10 +77,16 @@ export function decodeBeneficiarySet(data: Buffer | Uint8Array): {
     mint: assignment.mint,
     recipient: assignment.recipient,
   }))
+  // seal() sets reserved[0]=1 and writes a 32-byte salt at reserved[1..33] (see beneficiary_set.rs).
+  // The salt lets a resumed create recompute the exact commitment the seal produced, for arm_capsule.
+  const reserved: number[] = s.reserved ? Array.from(s.reserved as ArrayLike<number>) : []
+  const isSealed = s.version >= 3 && reserved[0] === 1
+  const configSalt = isSealed && reserved.length >= 33 ? reserved.slice(1, 33) : null
   return {
     owner: s.owner,
     version: s.version,
-    isSealed: s.version >= 3 && s.reserved?.[0] === 1,
+    isSealed,
+    configSalt,
     beneficiaries,
     nftAssignments,
   }

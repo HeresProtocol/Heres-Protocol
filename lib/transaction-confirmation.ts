@@ -6,7 +6,14 @@ import type {
   SignatureResult,
 } from '@solana/web3.js'
 
-type ConfirmationConnection = Pick<Connection, 'confirmTransaction' | 'getTransaction'>
+type ConfirmationConnection = Pick<Connection, 'confirmTransaction' | 'getTransaction'> & {
+  getSignatureStatuses?: (signatures: string[]) => Promise<{
+    value: Array<{
+      err: unknown
+      confirmationStatus?: string | null
+    } | null> | null
+  }>
+}
 
 function formatTransactionFailure(signature: string, result: SignatureResult, logs: string[]): string {
   const anchorError = logs.find((line) => line.includes('AnchorError'))
@@ -44,7 +51,7 @@ export async function confirmTransactionOrThrow(
           if (s.err) {
             throw new Error(`Transaction ${strategy.signature} failed: ${JSON.stringify(s.err)}`)
           }
-          if (['confirmed', 'finalized'].includes(s.confirmationStatus ?? '')) {
+          if (['processed', 'confirmed', 'finalized'].includes(s.confirmationStatus ?? '')) {
             return
           }
         }
@@ -62,18 +69,34 @@ export async function confirmTransactionOrThrow(
     }
   }
 
-  const confirmation = await connection.confirmTransaction(strategy, commitment)
-  if (!confirmation.value.err) return
+  try {
+    const confirmation = await connection.confirmTransaction(strategy, commitment)
+    if (!confirmation.value.err) return
 
-  const transactionCommitment: Finality = commitment === 'finalized' ? 'finalized' : 'confirmed'
-  const transaction = await connection
-    .getTransaction(strategy.signature, {
-      commitment: transactionCommitment,
-      maxSupportedTransactionVersion: 0,
-    })
-    .catch(() => null)
-  const logs = transaction?.meta?.logMessages ?? []
-  const error = new Error(formatTransactionFailure(strategy.signature, confirmation.value, logs))
-  Object.assign(error, { signature: strategy.signature, logs, transactionError: confirmation.value.err })
-  throw error
+    const transactionCommitment: Finality = commitment === 'finalized' ? 'finalized' : 'confirmed'
+    const transaction = await connection
+      .getTransaction(strategy.signature, {
+        commitment: transactionCommitment,
+        maxSupportedTransactionVersion: 0,
+      })
+      .catch(() => null)
+    const logs = transaction?.meta?.logMessages ?? []
+    const error = new Error(formatTransactionFailure(strategy.signature, confirmation.value, logs))
+    Object.assign(error, { signature: strategy.signature, logs, transactionError: confirmation.value.err })
+    throw error
+  } catch (error) {
+    const message = String((error as Error)?.message ?? error)
+    if (message.includes('TransactionExpiredBlockheightExceededError') || message.includes('expired: block height exceeded')) {
+      try {
+        const res = await conn.getSignatureStatuses?.([strategy.signature])
+        const s = res?.value?.[0]
+        if (s && !s.err && ['processed', 'confirmed', 'finalized'].includes(s.confirmationStatus ?? '')) {
+          return
+        }
+      } catch {
+        // Ignore secondary status lookups when the tx is already gone; we rethrow below.
+      }
+    }
+    throw error
+  }
 }
