@@ -2,7 +2,7 @@
 
 > **People disappear. Intent should not.**
 
-Heres is a **Privacy-Preserving Death Insurance Protocol on Solana**, where your digital assets remain securely delegated, conditions stay completely private inside **Magicblock Private Ephemeral Rollups (PER / TEE)**, and execution happens automatically when silence becomes truth. 
+Heres is a **Privacy-Preserving Insurance Protocol on Solana**, where your digital assets remain securely delegated, conditions stay completely private inside **Magicblock Private Ephemeral Rollups (PER / TEE)**, and execution happens automatically when silence becomes truth. 
 
 Beyond on-chain assets, Heres introduces a **"Confidential Bridge" via Chainlink CRE (Chainlink Runtime Environment)** to securely and autonomously deliver encrypted off-chain *Intent Statements* (such as legacy messages, vault passwords, or recovery codes) directly to your beneficiaries without any middlemen.
 
