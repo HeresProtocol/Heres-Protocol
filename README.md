@@ -12,7 +12,7 @@ Beyond on-chain assets, Heres introduces a **"Confidential Bridge" via Chainlink
 
 As digital asset ownership grows, a critical gap has emerged: **what happens to your crypto and your intentions when you can no longer manage them?** Traditional estate planning rarely covers bearer assets controlled by private keys, and leaving keys with a third party creates severe security and privacy risks. 
 
-At the same time, **confidential computing** has become a major focus in crypto infrastructure. Heres sits at this exact intersection: it acts as decentralized **death insurance**, utilizing **time-locked intent capsules** on Solana with **hardware-grade private execution** via Magicblock’s TEEs. Your “if I go silent” instructions are enforced automatically and privately, providing an institutional-grade digital succession layer.
+At the same time, **confidential computing** has become a major focus in crypto infrastructure. Heres sits at this exact intersection: it acts as decentralized **death insurance**, utilizing **time-locked intent capsules** on Solana with **hardware-grade private execution** via Magicblock’s TEEs. Your “if I go silent” instructions are enforced automatically and privately, providing an institutional-grade digital succession layer..
 
 ---
 
