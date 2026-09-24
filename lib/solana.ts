@@ -1839,7 +1839,14 @@ export async function cancelCapsule(wallet: HeresWallet, mint?: PublicKey): Prom
         ownerTokenAccount: null,
       }
 
-  return program.methods.cancelCapsule().accountsPartial(accounts).preInstructions(preInstructions).rpc()
+  // Route through sendBase instead of Anchor's .rpc(): .rpc() runs a preflight simulation, and on a
+  // load-balanced RPC (Helius) the simulate node may not yet have the just-fetched blockhash, yielding
+  // "Blockhash not found". sendBase skips preflight and rebuilds with a fresh blockhash on that error.
+  const cancelIx = await program.methods
+    .cancelCapsule()
+    .accountsPartial(accounts)
+    .instruction()
+  return sendBase(connection, wallet, [...preInstructions, cancelIx])
 }
 
 // Re-export types
