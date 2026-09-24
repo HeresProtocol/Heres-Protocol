@@ -1,4 +1,4 @@
-# Heres - Privacy-Preserving Death Insurance Protocol on Solana.
+# Heres - Privacy-Preserving Insurance Protocol on Solana.
 
 > **People disappear. Intent should not.**
 
