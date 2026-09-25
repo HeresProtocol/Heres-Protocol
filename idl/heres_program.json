@@ -211,6 +211,119 @@
       "args": []
     },
     {
+      "name": "complete_payout",
+      "docs": [
+        "Commit an all-asset payout in the same transaction as every distribution instruction."
+      ],
+      "discriminator": [
+        153,
+        6,
+        165,
+        130,
+        6,
+        69,
+        24,
+        42
+      ],
+      "accounts": [
+        {
+          "name": "capsule",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  105,
+                  110,
+                  116,
+                  101,
+                  110,
+                  116,
+                  95,
+                  99,
+                  97,
+                  112,
+                  115,
+                  117,
+                  108,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "capsule.owner",
+                "account": "IntentCapsule"
+              }
+            ]
+          }
+        },
+        {
+          "name": "beneficiary_set",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  98,
+                  101,
+                  110,
+                  101,
+                  102,
+                  105,
+                  99,
+                  105,
+                  97,
+                  114,
+                  121,
+                  95,
+                  115,
+                  101,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "capsule.owner",
+                "account": "IntentCapsule"
+              }
+            ]
+          }
+        },
+        {
+          "name": "vault",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  97,
+                  112,
+                  115,
+                  117,
+                  108,
+                  101,
+                  95,
+                  118,
+                  97,
+                  117,
+                  108,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "capsule.owner",
+                "account": "IntentCapsule"
+              }
+            ]
+          }
+        }
+      ],
+      "args": []
+    },
+    {
       "name": "crank_undelegate",
       "docs": [
         "Commit ER state and undelegate the Switch back to the base layer (crank-callable)."
@@ -2725,6 +2838,16 @@
       "code": 6029,
       "name": "InvalidAssetManifest",
       "msg": "Vault asset manifest is full or inconsistent"
+    },
+    {
+      "code": 6030,
+      "name": "AtomicPayoutRequired",
+      "msg": "All capsule assets must be distributed in one transaction"
+    },
+    {
+      "code": 6031,
+      "name": "PayoutAlreadyCompleted",
+      "msg": "Capsule payout has already completed"
     }
   ],
   "types": [

@@ -58,6 +58,9 @@ pub fn handler(ctx: Context<FinalizeCapsule>) -> Result<()> {
     );
     require!(!capsule.is_active, ErrorCode::CapsuleActive);
     require!(capsule.executed_at.is_some(), ErrorCode::CapsuleNotExecuted);
+    if capsule.requires_atomic_payout() {
+        require!(capsule.payout_complete(), ErrorCode::AtomicPayoutRequired);
+    }
     let vault_ai = ctx.accounts.vault.to_account_info();
     let rent_floor = Rent::get()?.minimum_balance(vault_ai.data_len());
     require!(vault_ai.lamports() <= rent_floor, ErrorCode::VaultNotEmpty);

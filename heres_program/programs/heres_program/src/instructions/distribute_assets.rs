@@ -16,6 +16,7 @@ use anchor_spl::token_interface::{
 use crate::constants::BPS_DENOMINATOR;
 use crate::error::ErrorCode;
 use crate::events::AssetsDistributed;
+use crate::instructions::complete_payout::require_completion_in_transaction;
 use crate::state::{BeneficiarySet, CapsuleVault, IntentCapsule};
 
 #[derive(Accounts)]
@@ -60,6 +61,12 @@ pub fn handler<'info>(ctx: Context<'_, '_, '_, 'info, DistributeAssets<'info>>) 
     let capsule = &ctx.accounts.capsule;
     require!(!capsule.is_active, ErrorCode::CapsuleActive);
     require!(capsule.executed_at.is_some(), ErrorCode::CapsuleNotExecuted);
+    require_completion_in_transaction(
+        capsule,
+        capsule.key(),
+        ctx.accounts.vault.key(),
+        ctx.remaining_accounts,
+    )?;
     if capsule.requires_config_commitment() {
         require!(
             ctx.accounts.beneficiary_set.requires_seal()

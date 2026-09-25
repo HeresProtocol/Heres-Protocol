@@ -25,7 +25,7 @@ const withReserved = (
 
 import { assert, expect } from "chai";
 import { createHash } from "node:crypto";
-import { SystemProgram as SP } from "@solana/web3.js";
+import { SYSVAR_INSTRUCTIONS_PUBKEY, SystemProgram as SP } from "@solana/web3.js";
 import { ASSOCIATED_TOKEN_PROGRAM_ID } from "@solana/spl-token";
 import {
   Env,
@@ -149,7 +149,8 @@ const updateActivityIx = (env: Env, ownerPk: PublicKey, authority: PublicKey) =>
 const distributeSolIx = (
   env: Env,
   ownerPk: PublicKey,
-  recipients: PublicKey[]
+  recipients: PublicKey[],
+  atomic = false
 ) =>
   env.program.methods
     .distributeAssets()
@@ -163,14 +164,18 @@ const distributeSolIx = (
       vaultTokenAccount: null,
     })
     .remainingAccounts(
-      recipients.map((pubkey) => ({ pubkey, isWritable: true, isSigner: false }))
+      [
+        ...recipients.map((pubkey) => ({ pubkey, isWritable: true, isSigner: false })),
+        ...(atomic ? [{ pubkey: SYSVAR_INSTRUCTIONS_PUBKEY, isWritable: false, isSigner: false }] : []),
+      ]
     );
 
 const distributeSplIx = (
   env: Env,
   ownerPk: PublicKey,
   mint: PublicKey,
-  recipientAtas: PublicKey[]
+  recipientAtas: PublicKey[],
+  atomic = false
 ) =>
   env.program.methods
     .distributeAssets()
@@ -184,7 +189,10 @@ const distributeSplIx = (
       vaultTokenAccount: ataFor(vaultPda(ownerPk), mint, true),
     })
     .remainingAccounts(
-      recipientAtas.map((pubkey) => ({ pubkey, isWritable: true, isSigner: false }))
+      [
+        ...recipientAtas.map((pubkey) => ({ pubkey, isWritable: true, isSigner: false })),
+        ...(atomic ? [{ pubkey: SYSVAR_INSTRUCTIONS_PUBKEY, isWritable: false, isSigner: false }] : []),
+      ]
     );
 
 const distributeNftIx = (
@@ -192,9 +200,10 @@ const distributeNftIx = (
   ownerPk: PublicKey,
   mint: PublicKey,
   recipient: PublicKey,
-  recipientAta: PublicKey
-) =>
-  env.program.methods.distributeNft(recipient).accountsPartial({
+  recipientAta: PublicKey,
+  atomic = false
+) => {
+  const builder = env.program.methods.distributeNft(recipient).accountsPartial({
     capsule: capsulePda(ownerPk),
     beneficiarySet: beneficiarySetPda(ownerPk),
     vault: vaultPda(ownerPk),
@@ -202,6 +211,17 @@ const distributeNftIx = (
     mint,
     vaultTokenAccount: ataFor(vaultPda(ownerPk), mint, true),
     recipientTokenAccount: recipientAta,
+  });
+  return atomic
+    ? builder.remainingAccounts([{ pubkey: SYSVAR_INSTRUCTIONS_PUBKEY, isWritable: false, isSigner: false }])
+    : builder;
+};
+
+const completePayoutIx = (env: Env, ownerPk: PublicKey) =>
+  env.program.methods.completePayout().accountsPartial({
+    capsule: capsulePda(ownerPk),
+    beneficiarySet: beneficiarySetPda(ownerPk),
+    vault: vaultPda(ownerPk),
   });
 
 const recoverSolIx = (env: Env, owner: Keypair) =>
@@ -327,7 +347,8 @@ const DAY = 24 * 60 * 60;
 async function freshCapsule(
   env: Env,
   inactivity = DAY,
-  heartbeat?: PublicKey
+  heartbeat?: PublicKey,
+  settlement: "legacy" | "atomic" = "legacy"
 ): Promise<Keypair> {
   const owner = await fundedKeypair(env, 50);
   const res = await send(
@@ -337,6 +358,18 @@ async function freshCapsule(
     [owner]
   );
   assertOk(res, "create_capsule");
+  // Existing cases exercise the deployed v2 per-asset compatibility path. New v3 tests below
+  // opt into the atomic path explicitly; the production create instruction always makes v3.
+  if (settlement === "legacy") {
+    const address = capsulePda(owner.publicKey);
+    const account = await env.client.getAccount(address);
+    if (!account) throw new Error("new capsule account missing");
+    const decoded = env.program.coder.accounts.decode("intentCapsule", Buffer.from(account.data)) as any;
+    const encoded = await env.program.coder.accounts.encode("intentCapsule", { ...decoded, version: 2 });
+    const data = Buffer.alloc(account.data.length);
+    Buffer.from(encoded).copy(data);
+    env.context.setAccount(address, { ...account, data });
+  }
   return owner;
 }
 
@@ -1184,6 +1217,63 @@ describe("heres: beneficiary validation", () => {
       [owner]
     );
     assertErr(res, "InvalidBeneficiaryAddress");
+  });
+});
+
+describe("heres: atomic capsule payout", () => {
+  it("rejects a standalone distribution from a v3 capsule", async () => {
+    const env = await startEnv({ creationFee: 0 });
+    const owner = await freshCapsule(env, 100, undefined, "atomic");
+    const recipient = Keypair.generate().publicKey;
+    assertOk(await send(env, owner, updateIntentIx(env, owner, [{ pubkey: recipient, shareBps: 10000 }]), [owner]));
+    assertOk(await send(env, owner, depositSolIx(env, owner, LAMPORTS_PER_SOL), [owner]));
+    await fire(env, owner, 100);
+
+    const direct = await send(env, env.payer, distributeSolIx(env, owner.publicKey, [recipient], true));
+    assertErr(direct, "AtomicPayoutRequired");
+    expect(await lamportsOf(env, recipient)).to.eq(0);
+
+    const payout = await sendRaw(env, env.payer, [
+      await distributeSolIx(env, owner.publicKey, [recipient], true).instruction(),
+      await completePayoutIx(env, owner.publicKey).instruction(),
+    ]);
+    assertOk(payout, "atomic SOL payout");
+    expect(await lamportsOf(env, recipient)).to.eq(LAMPORTS_PER_SOL);
+    const capsule = await fetchCapsule(env, owner.publicKey);
+    expect(capsule.reserved[32]).to.eq(1);
+  });
+
+  it("rolls back SOL when a registered token is omitted, then pays both together", async () => {
+    const env = await startEnv({ creationFee: 0 });
+    const owner = await freshCapsule(env, 100, undefined, "atomic");
+    const recipient = Keypair.generate().publicKey;
+    assertOk(await send(env, owner, updateIntentIx(env, owner, [{ pubkey: recipient, shareBps: 10000 }]), [owner]));
+    assertOk(await send(env, owner, depositSolIx(env, owner, LAMPORTS_PER_SOL), [owner]));
+
+    const mintAuth = await fundedKeypair(env, 5);
+    const mint = await createMint(env, mintAuth.publicKey);
+    const ownerAta = await createAta(env, owner.publicKey, mint);
+    const recipientAta = await createAta(env, recipient, mint);
+    await mintTo(env, mint, ownerAta, mintAuth, 100n);
+    assertOk(await send(env, owner, depositSplIx(env, owner, 100n, mint, ownerAta), [owner]));
+    await fire(env, owner, 100);
+
+    const missingToken = await sendRaw(env, env.payer, [
+      await distributeSolIx(env, owner.publicKey, [recipient], true).instruction(),
+      await completePayoutIx(env, owner.publicKey).instruction(),
+    ]);
+    assertErr(missingToken, "VaultNotEmpty");
+    expect(await lamportsOf(env, recipient)).to.eq(0);
+    expect(await tokenBalance(env, recipientAta)).to.eq(0n);
+
+    const fullPayout = await sendRaw(env, env.payer, [
+      await distributeSplIx(env, owner.publicKey, mint, [recipientAta], true).instruction(),
+      await distributeSolIx(env, owner.publicKey, [recipient], true).instruction(),
+      await completePayoutIx(env, owner.publicKey).instruction(),
+    ]);
+    assertOk(fullPayout, "atomic SPL and SOL payout");
+    expect(await tokenBalance(env, recipientAta)).to.eq(100n);
+    expect(await lamportsOf(env, recipient)).to.be.greaterThan(LAMPORTS_PER_SOL);
   });
 });
 

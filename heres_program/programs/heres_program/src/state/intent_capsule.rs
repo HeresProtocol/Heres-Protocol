@@ -21,14 +21,16 @@ pub struct IntentCapsule {
     pub heartbeat_authority: Pubkey, // off-chain relayer allowed to bump last_activity (regular ER)
     pub version: u8,
     pub target_date: Option<i64>, // absolute unix ts; fires regardless of activity once reached (None = inactivity-only)
-    pub reserved: [u8; 55],       // bytes 0..32 hold the sealed inheritance commitment in v2+
+    pub reserved: [u8; 55],       // bytes 0..32: commitment; byte 32: atomic payout completion in v3+
 }
 
 impl IntentCapsule {
     /// On-chain layout version. Bump when the struct changes so future code can branch on it.
-    pub const CURRENT_VERSION: u8 = 2;
+    pub const CURRENT_VERSION: u8 = 3;
     pub const SEALED_CONFIG_VERSION: u8 = 2;
+    pub const ATOMIC_PAYOUT_VERSION: u8 = 3;
     const CONFIG_HASH_END: usize = 32;
+    const PAYOUT_COMPLETE_INDEX: usize = 32;
 
     pub const LEN: usize = 32 + // owner
         8 +                      // inactivity_period
@@ -63,5 +65,17 @@ impl IntentCapsule {
 
     pub fn clear_config_commitment(&mut self) {
         self.reserved[..Self::CONFIG_HASH_END].fill(0);
+    }
+
+    pub fn requires_atomic_payout(&self) -> bool {
+        self.version >= Self::ATOMIC_PAYOUT_VERSION
+    }
+
+    pub fn payout_complete(&self) -> bool {
+        self.requires_atomic_payout() && self.reserved[Self::PAYOUT_COMPLETE_INDEX] == 1
+    }
+
+    pub fn mark_payout_complete(&mut self) {
+        self.reserved[Self::PAYOUT_COMPLETE_INDEX] = 1;
     }
 }
