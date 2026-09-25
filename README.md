@@ -44,7 +44,7 @@ To ensure maximum flexibility for users, Heres Protocol is designed to support a
 | **Phase 1** | Solana Assets | SOL, wallet-held classic SPL, Token-2022, standard Solana NFTs | Live on devnet |
 | **Phase 2** | Curated Mainnet Assets | USDC, USDT, wBTC, JitoSOL, mSOL | Upcoming |
 | **Phase 3** | Yield-Bearing & DeFi Assets | LP Tokens, Vault Shares | Roadmap |
-| **Phase 4** | Real World Assets (RWA) | Tokenized Treasuries, Real Estate | Roadmap |
+| **Phase 4** | Real World Assets (RWA) | Tokenized Treasuries, Real Estate | Roadmap. |
 
 ### Technical Architecture
 | Layer | Technology | Role |
