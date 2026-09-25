@@ -37,6 +37,7 @@ test('capsule funding lists SOL and canonical fungible mints while excluding NFT
 
   const connection = {
     getBalance: async () => 2_500_000_000,
+    getMultipleAccountsInfo: async (mints: PublicKey[]) => mints.map(() => null),
     getParsedTokenAccountsByOwner: async (_owner: PublicKey, filter: { programId: PublicKey }) => ({
       value: filter.programId.equals(TOKEN_PROGRAM_ID)
         ? [

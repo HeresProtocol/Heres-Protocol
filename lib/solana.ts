@@ -40,6 +40,7 @@ import {
   ASSOCIATED_TOKEN_PROGRAM_ID as SPL_ASSOCIATED_TOKEN_ACCOUNT_PROGRAM_ID,
   ataFor,
   resolveTokenProgram,
+  validateMintForTransparentDeposit,
   validateStandardNft,
   buildCreateAtaIx,
   getVaultTokenAccounts,
@@ -51,6 +52,12 @@ import {
   createInheritanceSalt,
 } from '@/lib/inheritance-commitment'
 import { MAX_FUNGIBLE_ASSETS } from '@/lib/fungible-assets'
+import {
+  assertAtomicPayoutFits,
+  buildAtomicPayoutInstructions,
+  findMissingRecipientAtas,
+  readAtomicVaultSnapshot,
+} from '@/lib/atomic-payout'
 import {
   classifyCapsuleAccountOwner,
   type CapsuleAccountLocations,
@@ -569,7 +576,7 @@ export async function deposit(
   const [vaultPDA] = getCapsuleVaultPDA(owner)
   const amt = amount instanceof BN ? amount : new BN(amount)
 
-  const tokenProgram = mint ? await resolveTokenProgram(getSolanaConnection(), mint) : null
+  const tokenProgram = mint ? await validateMintForTransparentDeposit(getSolanaConnection(), mint) : null
   const accounts: any = mint
     ? {
         capsule: capsulePDA,
@@ -973,6 +980,29 @@ export async function createDelegatedCapsule(
   let baseSigs: string[] = []
 
   if (!capsuleExists) {
+    // Reject known incompatible token behavior and oversized all-or-nothing payouts before the
+    // separate create transaction charges the owner and leaves an incomplete draft.
+    const previewMints = [
+      ...nftAssignments.map(({ mint }) => mint),
+      ...fungibleDeposits.flatMap(({ mint }) => mint == null ? [] : [mint]),
+    ]
+    if (new Set(previewMints.map((mint) => mint.toBase58())).size !== previewMints.length) {
+      throw new Error('A token mint can only appear once in a capsule. Remove the duplicate asset before creating it.')
+    }
+    const previewAssets = await Promise.all(previewMints.map(async (mint) => ({
+      mint,
+      tokenProgram: await validateMintForTransparentDeposit(baseConn, mint),
+    })))
+    const previewIxs = await buildAtomicPayoutInstructions(
+      program,
+      owner,
+      params.beneficiaries,
+      nftAssignments,
+      previewAssets,
+      true
+    )
+    assertAtomicPayoutFits(owner, [...baseComputeBudgetIxs(1_400_000), ...previewIxs])
+
     // ---- W0 (fresh): create the Switch + BeneficiarySet + Vault, fund the vault, delegate both PDAs ----
     const targetDateBN = params.targetDateSeconds != null ? new BN(params.targetDateSeconds) : null
     const createIx = await program.methods
@@ -1236,6 +1266,44 @@ export async function distributeAssets(
   }
   if (await isAccountDelegated(beneficiarySetPDA)) {
     throw new Error('Beneficiary list is still in the TEE. Reveal it (undelegate) first before distributing.')
+  }
+
+  const capsuleInfo = await connection.getAccountInfo(capsulePDA, 'confirmed')
+  const capsuleState = capsuleInfo ? tryDecodeIntentCapsule(capsuleInfo.data) : null
+  if (!capsuleState) throw new Error('Capsule state is unavailable on the base layer')
+  if ((capsuleState.version ?? 0) >= 3) {
+    if (capsuleState.payoutComplete) {
+      throw new Error('All capsule assets were already paid out. Refresh My Capsule to finish delivery or finalization.')
+    }
+    const snapshot = await readAtomicVaultSnapshot(connection, vaultPDA, program.programId)
+    const payoutIxs = await buildAtomicPayoutInstructions(
+      program,
+      ownerPublicKey,
+      beneficiaries,
+      nftAssignments,
+      snapshot.assets,
+      snapshot.includeSol
+    )
+    const instructions = [...baseComputeBudgetIxs(1_400_000), ...payoutIxs]
+    assertAtomicPayoutFits(wallet.publicKey, instructions)
+    const setupIxs = await findMissingRecipientAtas(
+      connection,
+      wallet.publicKey,
+      beneficiaries,
+      nftAssignments,
+      snapshot.assets
+    )
+    for (const ix of setupIxs) {
+      await sendBase(connection, wallet, [ix])
+    }
+    await simulateBaseOrThrow(connection, wallet, instructions)
+    const signature = await sendBase(connection, wallet, instructions)
+    onLegConfirmed?.({
+      completed: snapshot.assets.length + Number(snapshot.includeSol),
+      signature,
+      asset: 'all capsule assets',
+    })
+    return signature
   }
 
   let lastSig = ''

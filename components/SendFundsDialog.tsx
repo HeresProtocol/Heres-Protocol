@@ -310,6 +310,11 @@ export function SendFundsDialog({ open, onClose, wallet }: SendFundsDialogProps)
                   {maxLoading ? 'Calculating...' : 'Max'}
                 </button>
               </div>
+              {selectedAsset?.kind === 'spl' && selectedAsset.usesScaledDisplay && (
+                <p className="text-xs text-Heres-muted">
+                  This token uses a display multiplier. Enter raw token units here; your wallet may show a different amount. Check the amount before approving.
+                </p>
+              )}
               <Input
                 id="send-wallet-amount"
                 value={amount}

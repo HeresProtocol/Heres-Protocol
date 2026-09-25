@@ -1,6 +1,6 @@
 import type { Connection } from '@solana/web3.js'
 import { PublicKey } from '@solana/web3.js'
-import { ataFor, getVaultTokenAccounts } from './spl.ts'
+import { ataFor, getScaledUiAmountMints, getVaultTokenAccounts, TOKEN_2022_PROGRAM_ID } from './spl.ts'
 
 export type CapsuleFundingAsset =
   | {
@@ -16,6 +16,7 @@ export type CapsuleFundingAsset =
       decimals: number
       mint: PublicKey
       tokenProgram: PublicKey
+      usesScaledDisplay: boolean
     }
 
 /**
@@ -40,6 +41,11 @@ export async function getCapsuleFundingAssets(
       account.ata.equals(ataFor(account.mint, owner, account.tokenProgram))
   )
 
+  const scaledMints = await getScaledUiAmountMints(
+    connection,
+    canonicalTokens.filter((account) => account.tokenProgram.equals(TOKEN_2022_PROGRAM_ID)).map((account) => account.mint)
+  )
+
   const fungibleTokens = await Promise.all(
     canonicalTokens.map(async (account): Promise<CapsuleFundingAsset | null> => {
       if (account.decimals === 0) {
@@ -56,6 +62,7 @@ export async function getCapsuleFundingAssets(
         decimals: account.decimals,
         mint: account.mint,
         tokenProgram: account.tokenProgram,
+        usesScaledDisplay: scaledMints.has(account.mint.toBase58()),
       }
     })
   )

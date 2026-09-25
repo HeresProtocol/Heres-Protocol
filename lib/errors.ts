@@ -37,6 +37,34 @@ export function normalizeTxError(err: unknown): string {
   const raw = rawMessage(err)
   const diagnostic = diagnosticMessage(err)
   const lower = diagnostic.toLowerCase()
+  const anchorCode = diagnostic.match(/error number:\s*(\d+)/i)
+  const customCode = diagnostic.match(/custom program error:\s*0x([\da-f]+)/i)
+  const programCode = anchorCode ? Number(anchorCode[1]) : customCode ? parseInt(customCode[1], 16) : null
+
+  if (programCode === 6023) {
+    return 'This token has a feature the capsule cannot safely transfer. Its assets remain in your wallet or vault. Check the token details in My Capsule.'
+  }
+  if (programCode === 6030 || lower.includes('atomicpayoutrequired')) {
+    return 'All assets in this capsule must pay out together. The payout is still pending; no asset was sent. Refresh My Capsule for the next step.'
+  }
+  if (programCode === 6028 || lower.includes('vaultnotempty')) {
+    return 'The capsule still holds an asset. No further payout can complete until it can be transferred. Refresh My Capsule for the next step.'
+  }
+  if (programCode === 6029 || lower.includes('invalidassetmanifest')) {
+    return 'The capsule asset record does not match its vault. This payout attempt sent no assets. Contact Heres support with the capsule address.'
+  }
+  if (programCode === 6031 || lower.includes('payoutalreadycompleted')) {
+    return 'This capsule has already paid out. Refresh My Capsule to finish delivery or finalization.'
+  }
+  if (lower.includes('mint is paused') || lower.includes('mintpaused')) {
+    return 'The token issuer paused this mint. This payout attempt sent no assets and remains pending.'
+  }
+  if (lower.includes('account is frozen') || lower.includes('accountfrozen')) {
+    return 'A token account is frozen by its issuer. This payout attempt sent no assets and remains pending.'
+  }
+  if (lower.includes('transfer hook')) {
+    return 'The token issuer enabled a transfer hook this capsule cannot execute. This payout attempt sent no assets and remains pending.'
+  }
 
   if (lower.includes('accountnotsigner') || lower.includes('account did not sign')) {
     return 'The transaction could not verify a required signer. Reconnect your wallet and try again.'

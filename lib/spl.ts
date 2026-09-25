@@ -5,6 +5,15 @@
  * owning program - never a hardcoded TOKEN_PROGRAM_ID.
  */
 import { Connection, PublicKey, SystemProgram, TransactionInstruction } from '@solana/web3.js'
+import {
+  ExtensionType,
+  getDefaultAccountState,
+  getExtensionTypes,
+  getPausableConfig,
+  getScaledUiAmountConfig,
+  getTransferHook,
+  unpackMint,
+} from '@solana/spl-token'
 
 export const TOKEN_PROGRAM_ID = new PublicKey('TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA')
 export const TOKEN_2022_PROGRAM_ID = new PublicKey('TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb')
@@ -25,6 +34,79 @@ export async function resolveTokenProgram(connection: Connection, mint: PublicKe
   if (info.owner.equals(TOKEN_2022_PROGRAM_ID)) return TOKEN_2022_PROGRAM_ID
   if (info.owner.equals(TOKEN_PROGRAM_ID)) return TOKEN_PROGRAM_ID
   throw new Error(`Mint ${mint.toBase58()} is not owned by a supported token program`)
+}
+
+const TRANSPARENT_MINT_EXTENSIONS = new Set<ExtensionType>([
+  ExtensionType.MintCloseAuthority,
+  ExtensionType.InterestBearingConfig,
+  ExtensionType.MetadataPointer,
+  ExtensionType.TokenMetadata,
+  ExtensionType.GroupPointer,
+  ExtensionType.TokenGroup,
+  ExtensionType.GroupMemberPointer,
+  ExtensionType.TokenGroupMember,
+  ExtensionType.ScaledUiAmountConfig,
+  ExtensionType.PermanentDelegate,
+  ExtensionType.DefaultAccountState,
+  ExtensionType.PausableConfig,
+  ExtensionType.ConfidentialTransferMint,
+  ExtensionType.TransferHook,
+])
+
+/** Mirror the on-chain transparent-transfer policy before charging a capsule creation fee. */
+export async function validateMintForTransparentDeposit(
+  connection: Connection,
+  mint: PublicKey
+): Promise<PublicKey> {
+  const info = await connection.getAccountInfo(mint, 'confirmed')
+  if (!info) throw new Error(`Token mint ${mint.toBase58()} was not found`)
+  if (info.owner.equals(TOKEN_PROGRAM_ID)) return TOKEN_PROGRAM_ID
+  if (!info.owner.equals(TOKEN_2022_PROGRAM_ID)) {
+    throw new Error(`Token mint ${mint.toBase58()} is not owned by a supported token program`)
+  }
+
+  const decoded = unpackMint(mint, info, TOKEN_2022_PROGRAM_ID)
+  const unsupported = getExtensionTypes(decoded.tlvData).find(
+    (extension) => !TRANSPARENT_MINT_EXTENSIONS.has(extension)
+  )
+  if (unsupported != null) {
+    throw new Error(
+      `Token ${mint.toBase58()} uses ${ExtensionType[unsupported] ?? 'an unknown extension'}, which this capsule cannot transfer yet.`
+    )
+  }
+  const hook = getTransferHook(decoded)
+  if (hook && !hook.programId.equals(PublicKey.default)) {
+    throw new Error(`Token ${mint.toBase58()} has an active transfer hook that this capsule cannot execute yet.`)
+  }
+  const pause = getPausableConfig(decoded)
+  if (pause?.paused) {
+    throw new Error(`Token ${mint.toBase58()} is currently paused by its issuer.`)
+  }
+  const defaultState = getDefaultAccountState(decoded)
+  if (defaultState?.state === 2) {
+    throw new Error(`Token ${mint.toBase58()} creates frozen accounts, so the capsule cannot fund its vault.`)
+  }
+  return TOKEN_2022_PROGRAM_ID
+}
+
+/** Identify mints whose wallet display amount can differ from the raw units used by transfers. */
+export async function getScaledUiAmountMints(
+  connection: Connection,
+  mints: readonly PublicKey[]
+): Promise<Set<string>> {
+  const unique = [...new Map(mints.map((mint) => [mint.toBase58(), mint])).values()]
+  const scaled = new Set<string>()
+  for (let start = 0; start < unique.length; start += 100) {
+    const batch = unique.slice(start, start + 100)
+    const infos = await connection.getMultipleAccountsInfo(batch, 'confirmed')
+    for (let index = 0; index < batch.length; index++) {
+      const info = infos[index]
+      if (!info?.owner.equals(TOKEN_2022_PROGRAM_ID)) continue
+      const mint = unpackMint(batch[index], info, TOKEN_2022_PROGRAM_ID)
+      if (getScaledUiAmountConfig(mint)) scaled.add(batch[index].toBase58())
+    }
+  }
+  return scaled
 }
 
 /**
@@ -51,7 +133,7 @@ export async function validateStandardNft(
   return tokenProgram
 }
 
-/** Build the create-ATA instruction for the given token program (idempotent create handled by caller). */
+/** Build an idempotent create-ATA instruction for either token program. */
 export function buildCreateAtaIx(
   payer: PublicKey,
   ata: PublicKey,
@@ -69,7 +151,7 @@ export function buildCreateAtaIx(
       { pubkey: SystemProgram.programId, isSigner: false, isWritable: false },
       { pubkey: tokenProgramId, isSigner: false, isWritable: false },
     ],
-    data: Buffer.alloc(0),
+    data: Buffer.from([1]),
   })
 }
 
@@ -79,6 +161,8 @@ export type VaultTokenAccount = {
   amount: bigint
   decimals: number
   tokenProgram: PublicKey
+  /** True only when a program deposit registered this canonical ATA with the vault. */
+  registered: boolean
 }
 
 /**
@@ -106,6 +190,7 @@ export async function getVaultTokenAccounts(
         amount: BigInt(info.tokenAmount.amount),
         decimals: Number(info.tokenAmount.decimals),
         tokenProgram,
+        registered: info.closeAuthority === owner.toBase58(),
       })
     }
   }

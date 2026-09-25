@@ -267,6 +267,7 @@ export function useCapsuleDetail({
     retry: 1,
     queryFn: async () => {
       if (!ownerPubkey) return false
+      if ((capsule?.version ?? 0) >= 3 && !capsule?.payoutComplete) return false
       const connection = getSolanaConnection()
       const [vaultPDA] = getCapsuleVaultPDA(ownerPubkey)
       const [vaultInfo, rentExemptLamports, tokenAccts] = await Promise.all([

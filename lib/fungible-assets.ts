@@ -22,6 +22,7 @@ export type WalletFungibleAsset = {
   balanceUi: number | null
   balanceBaseUnits: bigint | null
   tokenProgram: string | null
+  usesScaledDisplay?: boolean
 }
 
 export type SelectedFungibleAsset = WalletFungibleAsset & {
