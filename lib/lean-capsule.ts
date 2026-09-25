@@ -15,7 +15,7 @@
  * normalize to the camelCase shapes the app uses.
  */
 import { BorshAccountsCoder } from '@coral-xyz/anchor'
-import idl from '../idl/heres_program.json'
+import idl from '../idl/heres_program.json' with { type: 'json' }
 import type { IntentCapsule, OnChainBeneficiary, OnChainNftAssignment } from '@/types'
 
 const accountsCoder = new BorshAccountsCoder(idl as any)
@@ -39,6 +39,7 @@ export function decodeIntentCapsule(data: Buffer | Uint8Array): IntentCapsule {
     beneficiariesBump: c.beneficiaries_bump,
     heartbeatAuthority: c.heartbeat_authority,
     version: c.version,
+    payoutComplete: c.version >= 3 && c.reserved?.[32] === 1,
     targetDate: c.target_date == null ? null : c.target_date.toNumber(),
     beneficiaries: [],
     nftAssignments: [],

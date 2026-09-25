@@ -160,10 +160,8 @@ Reference for rebuilding and redeploying the on-chain program (`heres_program`).
 | Tool | Version | Notes |
 |------|---------|-------|
 | Solana CLI (Agave) | `4.0.3` | `solana --version` |
-| platform-tools | **`v1.54`** | Required for the program build. Do NOT use the `v1.53` that agave 4.0.3 bundles by default (see the gotcha below). |
-| `cargo-build-sbf` | `4.0.0` | Ships with Agave 4.0.3; pin the build toolchain with `--tools-version v1.54`. |
-| Rust (platform-tools v1.54) | `1.89.0` | Bundled in v1.54. |
-| Anchor CLI | `1.0.0` | `anchor --version` |
+| `cargo-build-sbf` | `4.0.0` | Ships with Agave 4.0.3. |
+| Anchor CLI | `0.32.1` | Match the program crate and generated IDL. |
 
 Program crate dependencies (`programs/heres_program/Cargo.toml`):
 
@@ -177,24 +175,25 @@ Program crate dependencies (`programs/heres_program/Cargo.toml`):
 
 ### Build
 
-Devnet requires programs to be deployed as **SBPFv3**. Build with platform-tools v1.54 and the v3 target:
+Build the program and regenerate its IDL with Anchor CLI 0.32.1:
 
 ```bash
 cd heres_program
-cargo-build-sbf --tools-version v1.54 --arch v3
+avm use 0.32.1
+anchor build
 # -> target/deploy/heres_program.so
-# verify the version: readelf -h target/deploy/heres_program.so | grep Flags  ->  Flags: 0x3
+# -> target/idl/heres_program.json
 ```
 
-The current deployment was built with `cargo-build-sbf` directly. To also regenerate the Anchor IDL, run `anchor build` and forward the same flags: `anchor build -- --tools-version v1.54 --arch v3`.
+The 2026-09-25 Devnet upgrade used the Anchor 0.32.1 build (ELF flags `0x0`) and passed live program, Token-2022, and ER/TEE checks. Copy the generated IDL into the web app's `idl/heres_program.json` before releasing the matching client.
 
 ### Deploy (in-place upgrade)
 
 ```bash
 solana program deploy heres_program/target/deploy/heres_program.so \
-  --program-id heres_program/target/deploy/heres_program-keypair.json \
+  --program-id sDRdG2qt6MKDB5Byfx7oqQLnZTDa32k1qM3hDSBmQUz \
   --upgrade-authority <UPGRADE_AUTHORITY_KEYPAIR> \
-  --fee-payer <UPGRADE_AUTHORITY_KEYPAIR> \
+  --fee-payer <DEVNET_FEE_PAYER_KEYPAIR> \
   --url https://api.devnet.solana.com \
   --with-compute-unit-price 50000 --max-sign-attempts 1000
 ```
@@ -203,11 +202,11 @@ Program ID (devnet): `sDRdG2qt6MKDB5Byfx7oqQLnZTDa32k1qM3hDSBmQUz`
 
 ### Gotcha: do not build v3 with platform-tools v1.53
 
-`agave 4.0.3` bundles **platform-tools v1.53, whose SBPFv3 codegen is broken**. A `v1.53 --arch v3` binary passes the loader's deploy verification and lands on-chain, but then crashes on every instruction at runtime (`Access violation in unknown section ...`, ~44 compute units, before the handler runs). Always build v3 with **`--tools-version v1.54`**, and verify the deployed bytecode by dumping it (`solana program dump <PROGRAM_ID> out.so`) and confirming its sha256 matches your local `.so`.
+An earlier `v1.53 --arch v3` binary passed loader verification but crashed on every instruction at runtime (`Access violation in unknown section ...`, about 44 compute units). If building v3 explicitly, use `--tools-version v1.54`. After deployment, dump the program and compare its first `stat -c %s local.so` bytes with the local binary. The on-chain dump includes trailing padding, so whole-file hashes can differ despite identical deployed code.
 
 ### Notes
 
-- Devnet rejects SBPFv0/v1/v2 deploys (`Detected sbpf_version ... not enabled`); v3 is required. Programs already deployed as v0 still execute, but cannot be redeployed as v0.
+- The 2026-09-25 Devnet upgrade accepted the Anchor-built `0x0` binary and executed it successfully. Do not assume an older SBPF version restriction still applies without a fresh deployment check.
 - If a deploy fails, close the orphan buffer before retrying so its rent is reclaimed: `solana program close <BUFFER_ADDRESS> --authority <AUTH> --recipient <AUTH>`.
 
 ---

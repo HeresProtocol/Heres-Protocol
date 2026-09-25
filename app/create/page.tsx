@@ -358,14 +358,14 @@ export default function CreatePage() {
                           Enter the amount for each asset. The same beneficiary percentages apply to every asset.
                         </p>
                         {selectedAssets.map((asset, index) => (
+                          <div key={asset.key} className="space-y-1.5">
                           <Field
-                            key={asset.key}
                             label={`Amount (${asset.symbol})`}
                             hint={asset.balanceUi == null
                               ? undefined
                               : asset.key === 'sol'
                                 ? `Available after the 0.08 SOL fee and rent reserve: ${asset.balanceUi} SOL`
-                                : `Available: ${asset.balanceUi} ${asset.symbol}`}
+                                : `Available: ${asset.balanceUi} ${asset.symbol}${asset.usesScaledDisplay ? ' (raw token units)' : ''}`}
                             error={fieldErrors[`assets.${index}.amount`]}
                             required
                           >
@@ -379,6 +379,12 @@ export default function CreatePage() {
                               className="font-mono tabular-nums"
                             />
                           </Field>
+                          {asset.usesScaledDisplay && (
+                            <p className="text-xs text-Heres-muted">
+                              This token uses a display multiplier. Enter raw token units here; your wallet may show a different amount. Check the amount before approving.
+                            </p>
+                          )}
+                          </div>
                         ))}
                       </div>
                     )}

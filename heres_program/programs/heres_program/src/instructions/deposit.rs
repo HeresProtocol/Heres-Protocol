@@ -7,7 +7,9 @@ use anchor_lang::system_program;
 use anchor_spl::associated_token::AssociatedToken;
 use anchor_spl::token_2022::spl_token_2022::{
     self,
-    extension::{BaseStateWithExtensions, ExtensionType, StateWithExtensions},
+    extension::{
+        transfer_hook::TransferHook, BaseStateWithExtensions, ExtensionType, StateWithExtensions,
+    },
     state::Mint as Token2022Mint,
 };
 use anchor_lang::solana_program::program_option::COption;
@@ -19,8 +21,8 @@ use anchor_spl::token_interface::{
 use crate::error::ErrorCode;
 use crate::state::{CapsuleVault, IntentCapsule};
 
-/// Extensions that change transfer authorization, balances, fees, or required CPI accounts are not
-/// supported. Metadata and display-only extensions do not affect raw token settlement.
+/// Issuer controls do not by themselves prevent transparent vault transfers. Reject extensions
+/// whose transfer accounting or required accounts this program does not implement.
 fn is_supported_mint_extension(extension: &ExtensionType) -> bool {
     matches!(
         extension,
@@ -33,6 +35,11 @@ fn is_supported_mint_extension(extension: &ExtensionType) -> bool {
             | ExtensionType::GroupMemberPointer
             | ExtensionType::TokenGroupMember
             | ExtensionType::ScaledUiAmount
+            | ExtensionType::PermanentDelegate
+            | ExtensionType::DefaultAccountState
+            | ExtensionType::Pausable
+            | ExtensionType::ConfidentialTransferMint
+            | ExtensionType::TransferHook
     )
 }
 
@@ -51,6 +58,16 @@ fn validate_mint_extensions(mint: &AccountInfo<'_>, token_program: &Pubkey) -> R
         extensions.iter().all(is_supported_mint_extension),
         ErrorCode::UnsupportedTokenExtension
     );
+    // A configured hook may require extra CPI accounts. The current deposit and payout
+    // instructions support only an unconfigured hook, as used by the TBILLx Devnet mint.
+    // If the issuer configures it later, atomic payout must stop rather than partially settle.
+    if extensions.contains(&ExtensionType::TransferHook) {
+        let hook = state
+            .get_extension::<TransferHook>()
+            .map_err(|_| error!(ErrorCode::InvalidTokenAccount))?;
+        let hook_program: Option<Pubkey> = hook.program_id.into();
+        require!(hook_program.is_none(), ErrorCode::UnsupportedTokenExtension);
+    }
     Ok(())
 }
 
@@ -200,19 +217,20 @@ mod tests {
     use super::*;
 
     #[test]
-    fn rejects_extensions_that_change_settlement_behavior() {
+    fn rejects_extensions_without_transfer_accounting() {
         assert!(!is_supported_mint_extension(
             &ExtensionType::TransferFeeConfig
         ));
-        assert!(!is_supported_mint_extension(&ExtensionType::TransferHook));
-        assert!(!is_supported_mint_extension(
-            &ExtensionType::PermanentDelegate
-        ));
-        assert!(!is_supported_mint_extension(&ExtensionType::Pausable));
+        assert!(!is_supported_mint_extension(&ExtensionType::NonTransferable));
     }
 
     #[test]
-    fn accepts_metadata_only_extensions() {
+    fn accepts_transparent_tbillx_extension_profile() {
+        assert!(is_supported_mint_extension(&ExtensionType::PermanentDelegate));
+        assert!(is_supported_mint_extension(&ExtensionType::DefaultAccountState));
+        assert!(is_supported_mint_extension(&ExtensionType::Pausable));
+        assert!(is_supported_mint_extension(&ExtensionType::ConfidentialTransferMint));
+        assert!(is_supported_mint_extension(&ExtensionType::TransferHook));
         assert!(is_supported_mint_extension(&ExtensionType::MetadataPointer));
         assert!(is_supported_mint_extension(&ExtensionType::TokenMetadata));
         assert!(is_supported_mint_extension(&ExtensionType::GroupPointer));

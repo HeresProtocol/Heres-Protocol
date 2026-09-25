@@ -5,6 +5,7 @@ import 'server-only'
 
 import {
   Connection,
+  ComputeBudgetProgram,
   Keypair,
   PublicKey,
   SystemProgram,
@@ -19,10 +20,16 @@ import { getSolanaConnection } from '@/config/solana'
 import { getCapsulePDA, getCapsuleVaultPDA, getBeneficiarySetPDA, getFeeConfigPDA } from './program'
 import { decodeBeneficiarySet } from './lean-capsule'
 import { getDueOwners, getRegisteredOwners, setCapsuleDue, unregisterCapsuleOwner } from './capsule-registry'
-import { MAGICBLOCK_ER, PER_TEE } from '@/constants'
+import { MAGICBLOCK_ER, PER_TEE, PRIORITY_FEE } from '@/constants'
 import { ataFor, buildCreateAtaIx, getVaultTokenAccounts } from '@/lib/spl'
 import { confirmTransactionOrThrow } from '@/lib/transaction-confirmation'
 import { dispatchIntentDeliveryForCapsule } from '@/lib/intent-delivery/service'
+import {
+  assertAtomicPayoutFits,
+  buildAtomicPayoutInstructions,
+  findMissingRecipientAtas,
+  readAtomicVaultSnapshot,
+} from '@/lib/atomic-payout'
 
 const DELEGATION_PROGRAM_ID = new PublicKey(MAGICBLOCK_ER.DELEGATION_PROGRAM_ID)
 const PERMISSION_PROGRAM_ID = new PublicKey(MAGICBLOCK_ER.PERMISSION_PROGRAM_ID)
@@ -128,6 +135,8 @@ type LeanBeneficiary = { pubkey: PublicKey; shareBps: number }
 type LeanNftAssignment = { mint: PublicKey; recipient: PublicKey }
 type LeanCapsule = {
   owner: PublicKey
+  version: number
+  payoutComplete: boolean
   inactivityPeriod: number
   lastActivity: number
   isActive: boolean
@@ -144,6 +153,8 @@ function decodeLeanCapsule(data: Buffer): LeanCapsule {
   const c = accountsCoder.decode('IntentCapsule', data) as any
   return {
     owner: c.owner,
+    version: c.version,
+    payoutComplete: c.version >= 3 && c.reserved?.[32] === 1,
     inactivityPeriod: c.inactivity_period.toNumber(),
     lastActivity: c.last_activity.toNumber(),
     isActive: c.is_active,
@@ -371,6 +382,57 @@ async function distributeAll(
   return solDrained && tokensDrained
 }
 
+async function distributeAllAtomic(
+  connection: Connection,
+  program: Program,
+  keypair: Keypair,
+  owner: PublicKey,
+  beneficiaries: LeanBeneficiary[],
+  nftAssignments: LeanNftAssignment[]
+): Promise<boolean> {
+  const [vault] = getCapsuleVaultPDA(owner)
+  const snapshot = await readAtomicVaultSnapshot(connection, vault, program.programId)
+  const payoutIxs = await buildAtomicPayoutInstructions(
+    program,
+    owner,
+    beneficiaries,
+    nftAssignments,
+    snapshot.assets,
+    snapshot.includeSol
+  )
+  const instructions = [
+    ComputeBudgetProgram.setComputeUnitLimit({ units: 1_400_000 }),
+    ...(PRIORITY_FEE.MICRO_LAMPORTS > 0
+      ? [ComputeBudgetProgram.setComputeUnitPrice({ microLamports: PRIORITY_FEE.MICRO_LAMPORTS })]
+      : []),
+    ...payoutIxs,
+  ]
+  assertAtomicPayoutFits(keypair.publicKey, instructions)
+
+  const setupIxs = await findMissingRecipientAtas(
+    connection,
+    keypair.publicKey,
+    beneficiaries,
+    nftAssignments,
+    snapshot.assets
+  )
+  for (const ix of setupIxs) await sendRaw(connection, keypair, [ix])
+
+  const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash('confirmed')
+  const tx = new Transaction({ feePayer: keypair.publicKey, blockhash, lastValidBlockHeight })
+  instructions.forEach((ix) => tx.add(ix))
+  tx.sign(keypair)
+  const simulation = await connection.simulateTransaction(tx)
+  if (simulation.value.err) {
+    const detail = simulation.value.logs?.find((line) => line.includes('AnchorError'))
+      ?? JSON.stringify(simulation.value.err)
+    throw new Error(`Atomic capsule payout blocked: ${detail}`)
+  }
+  const signature = await connection.sendRawTransaction(tx.serialize(), { skipPreflight: true })
+  await confirmTransactionOrThrow(connection, { signature, blockhash, lastValidBlockHeight })
+  return true
+}
+
 /** Close the settled core PDAs. FeeConfig pins the rent destination on-chain. */
 async function finalizeCapsuleAccounts(
   connection: Connection,
@@ -534,6 +596,7 @@ export async function runCrankPipeline(
           if (!isNotFiredError(e)) throw e
           // not yet fired -> nothing to do this tick
         }
+        await setCapsuleDue(ownerStr, now + 30)
         continue
       }
 
@@ -550,6 +613,7 @@ export async function runCrankPipeline(
           // Never-delegated (or pre-delegation) Switch that is due: fire on base.
           await sendRaw(connection, crankKeypair, [await executeIntentIx(baseProgram, owner)])
           result.executedBase += 1
+          await setCapsuleDue(ownerStr, now + 30)
         } else {
           await setCapsuleDue(ownerStr, dueAt)
         }
@@ -578,25 +642,32 @@ export async function runCrankPipeline(
             throw e
           }
         }
+        await setCapsuleDue(ownerStr, now + 30)
         continue // BeneficiarySet settles to base; distribute on a later tick
       }
 
       // BeneficiarySet is on base (revealed): decode the now-public list and pay out.
       if (!info.benSet) {
         result.errors.push(`${ownerStr}: fired but BeneficiarySet account missing`)
+        await setCapsuleDue(ownerStr, now + 300)
         continue
       }
       const inheritance = decodeBeneficiarySet(info.benSet.data)
-      const drained = await distributeAll(
-        connection,
-        baseProgram,
-        crankKeypair,
-        owner,
-        inheritance.beneficiaries,
-        inheritance.nftAssignments
-      )
-      result.distributed += 1
-      if (!drained) continue
+      const drained = cap.payoutComplete
+        ? true
+        : await (cap.version >= 3 ? distributeAllAtomic : distributeAll)(
+            connection,
+            baseProgram,
+            crankKeypair,
+            owner,
+            inheritance.beneficiaries,
+            inheritance.nftAssignments
+          )
+      if (!cap.payoutComplete) result.distributed += 1
+      if (!drained) {
+        await setCapsuleDue(ownerStr, now + 60)
+        continue
+      }
 
       // Intent delivery needs the live capsule state to derive its idempotency key. It must complete
       // before finalization removes that state. Capsules without an intent statement are explicitly
@@ -611,6 +682,7 @@ export async function runCrankPipeline(
           result.ok = false
           result.errors.push(`${ownerStr}: intent delivery failed: ${delivery.error ?? 'unknown error'}`)
         }
+        await setCapsuleDue(ownerStr, now + 60)
         continue
       }
 
@@ -620,6 +692,11 @@ export async function runCrankPipeline(
     } catch (e) {
       result.ok = false
       result.errors.push(`${ownerStr}: ${e instanceof Error ? e.message : String(e)}`)
+      try {
+        await setCapsuleDue(ownerStr, now + 60)
+      } catch (retryError) {
+        result.errors.push(`${ownerStr}: retry scheduling failed: ${retryError instanceof Error ? retryError.message : String(retryError)}`)
+      }
     }
   }
 

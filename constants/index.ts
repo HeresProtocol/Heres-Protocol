@@ -2,13 +2,13 @@
  * Application constants
  */
 
-import idl from '@/idl/heres_program.json'
+import idl from '../idl/heres_program.json' with { type: 'json' }
 import {
   getDefaultHeliusApiBaseUrl,
   getDefaultHeliusRpcUrl,
   getDefaultSolanaRpcUrl,
   isValidHeliusApiKey,
-} from '@/lib/helius-client'
+} from '../lib/helius-client.ts'
 
 export type SolanaNetwork = 'devnet' | 'testnet' | 'mainnet-beta'
 

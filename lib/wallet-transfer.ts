@@ -14,7 +14,7 @@ import {
   getMint,
 } from '@solana/spl-token'
 import type { HeresWallet } from '@/types/wallet'
-import { getVaultTokenAccounts } from '@/lib/spl'
+import { getScaledUiAmountMints, getVaultTokenAccounts, TOKEN_2022_PROGRAM_ID } from '@/lib/spl'
 import { confirmTransactionOrThrow } from '@/lib/transaction-confirmation'
 
 export type WalletTransferAsset =
@@ -32,6 +32,7 @@ export type WalletTransferAsset =
       mint: PublicKey
       sourceTokenAccount: PublicKey
       tokenProgram: PublicKey
+      usesScaledDisplay: boolean
     }
 
 export interface WalletTransferRequest {
@@ -58,6 +59,11 @@ export async function getWalletTransferAssets(
     getVaultTokenAccounts(connection, owner),
   ])
 
+  const scaledMints = await getScaledUiAmountMints(
+    connection,
+    tokenAccounts.filter((account) => account.tokenProgram.equals(TOKEN_2022_PROGRAM_ID)).map((account) => account.mint)
+  )
+
   return [
     { id: 'sol', kind: 'sol', balance: BigInt(lamports), decimals: 9 },
     ...tokenAccounts
@@ -70,6 +76,7 @@ export async function getWalletTransferAssets(
         mint: account.mint,
         sourceTokenAccount: account.ata,
         tokenProgram: account.tokenProgram,
+        usesScaledDisplay: scaledMints.has(account.mint.toBase58()),
       })),
   ]
 }

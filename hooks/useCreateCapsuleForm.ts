@@ -23,7 +23,7 @@ import {
   MAX_CAPSULE_MODIFICATIONS,
 } from '@/constants'
 import { daysToSeconds } from '@/utils/intent'
-import { getVaultTokenAccountsWithFallback } from '@/lib/spl'
+import { getScaledUiAmountMints, getVaultTokenAccountsWithFallback, TOKEN_2022_PROGRAM_ID } from '@/lib/spl'
 import { buildIntentSignedMessage } from '@/utils/intentAuth'
 import { bytesToBase64, sha256Hex } from '@/utils/intentClient'
 import { isValidEmail } from '@/utils/validation'
@@ -345,6 +345,11 @@ export function useCreateCapsuleForm() {
         [getSolanaConnection(), getSolanaFallbackConnection()],
         publicKey!
       )
+      const token2022Mints = accts
+        .filter((account) => account.tokenProgram.equals(TOKEN_2022_PROGRAM_ID))
+        .map((account) => account.mint)
+      const scaledMints = await getScaledUiAmountMints(getSolanaConnection(), token2022Mints)
+        .catch(() => getScaledUiAmountMints(getSolanaFallbackConnection(), token2022Mints))
       const tokens: WalletFungibleAsset[] = accts
         .filter((t) => t.amount > 0n && !(t.decimals === 0 && t.amount === 1n))
         .map((t) => ({
@@ -355,6 +360,7 @@ export function useCreateCapsuleForm() {
           balanceUi: Number(t.amount) / Math.pow(10, t.decimals),
           balanceBaseUnits: t.amount,
           tokenProgram: t.tokenProgram.toBase58(),
+          usesScaledDisplay: scaledMints.has(t.mint.toBase58()),
         }))
         .sort((a, b) => b.balanceUi - a.balanceUi)
       return tokens

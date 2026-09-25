@@ -57,6 +57,8 @@ export interface IntentCapsule {
   beneficiariesBump?: number
   heartbeatAuthority?: PublicKey
   version?: number
+  /** On-chain v3 marker set only after every registered asset paid out in one transaction. */
+  payoutComplete?: boolean
   /** True when the TEE settlement configuration is immutable for this lifecycle. */
   inheritanceSealed?: boolean
   /** Runtime delegation state of the separate BeneficiarySet account. */

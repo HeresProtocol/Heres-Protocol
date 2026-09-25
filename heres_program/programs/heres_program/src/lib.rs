@@ -11,6 +11,7 @@ pub mod state;
 // so the #[program] dispatcher can resolve them. Private (no re-export) to avoid glob ambiguity.
 use instructions::arm_capsule::*;
 use instructions::cancel_capsule::*;
+use instructions::complete_payout::*;
 use instructions::crank_undelegate::*;
 use instructions::crank_undelegate_beneficiaries::*;
 use instructions::create_capsule::*;
@@ -131,6 +132,11 @@ pub mod heres_program {
     /// Transfer one standard SPL NFT to its explicitly assigned recipient after the capsule fires.
     pub fn distribute_nft(ctx: Context<DistributeNft>, recipient: Pubkey) -> Result<()> {
         instructions::distribute_nft::handler(ctx, recipient)
+    }
+
+    /// Commit an all-asset payout in the same transaction as every distribution instruction.
+    pub fn complete_payout(ctx: Context<CompletePayout>) -> Result<()> {
+        instructions::complete_payout::handler(ctx)
     }
 
     /// Close a fully settled capsule and reclaim its account rent to the configured fee recipient.

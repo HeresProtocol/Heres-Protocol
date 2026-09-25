@@ -3,6 +3,7 @@
 
 pub mod arm_capsule;
 pub mod cancel_capsule;
+pub mod complete_payout;
 pub mod crank_undelegate;
 pub mod crank_undelegate_beneficiaries;
 pub mod create_capsule;

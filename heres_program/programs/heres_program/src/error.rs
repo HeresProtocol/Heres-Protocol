@@ -64,4 +64,8 @@ pub enum ErrorCode {
     VaultNotEmpty,
     #[msg("Vault asset manifest is full or inconsistent")]
     InvalidAssetManifest,
+    #[msg("All capsule assets must be distributed in one transaction")]
+    AtomicPayoutRequired,
+    #[msg("Capsule payout has already completed")]
+    PayoutAlreadyCompleted,
 }

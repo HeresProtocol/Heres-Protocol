@@ -1,9 +1,9 @@
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { test } from 'node:test'
-import { BorshAccountsCoder } from '@coral-xyz/anchor'
+import anchor, { BorshAccountsCoder } from '@coral-xyz/anchor'
 import { PublicKey } from '@solana/web3.js'
-import { decodeBeneficiarySet } from '../lib/lean-capsule.ts'
+import { decodeBeneficiarySet, decodeIntentCapsule } from '../lib/lean-capsule.ts'
 
 // The decoder underpins resumable capsule creation (W4): when a create is retried past the seal, the
 // original salt is gone from the client, so arm_capsule must be re-driven with the commitment
@@ -12,6 +12,7 @@ const idl = JSON.parse(
   readFileSync(new URL('../idl/heres_program.json', import.meta.url), 'utf8')
 )
 const coder = new BorshAccountsCoder(idl)
+const { BN } = anchor
 
 function buildBeneficiarySet(opts: { sealed: boolean; salt?: number[] }) {
   const reserved = new Array(64).fill(0)
@@ -53,4 +54,28 @@ test('decodeBeneficiarySet returns a null salt when the set is not sealed', asyn
 
   assert.equal(decoded.isSealed, false)
   assert.equal(decoded.configSalt, null)
+})
+
+test('decodeIntentCapsule reads the v3 payout completion marker for retry and finalization', async () => {
+  const reserved = new Array(55).fill(0)
+  const account = {
+    owner: PublicKey.default,
+    inactivity_period: new BN(60),
+    last_activity: new BN(100),
+    is_active: false,
+    executed_at: new BN(200),
+    bump: 1,
+    vault_bump: 2,
+    beneficiaries_bump: 3,
+    heartbeat_authority: PublicKey.default,
+    version: 3,
+    target_date: null,
+    reserved,
+  }
+  const pending = await coder.encode('IntentCapsule', account)
+  assert.equal(decodeIntentCapsule(pending).payoutComplete, false)
+
+  reserved[32] = 1
+  const settled = await coder.encode('IntentCapsule', { ...account, reserved })
+  assert.equal(decodeIntentCapsule(settled).payoutComplete, true)
 })
