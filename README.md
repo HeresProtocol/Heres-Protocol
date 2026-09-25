@@ -1,6 +1,6 @@
 # Heres - Privacy-Preserving Insurance Protocol on Solana.
 
-> **People disappear. Intent should not.**
+> **People disappear. Intent should not**
 
 Heres is a **Privacy-Preserving Insurance Protocol on Solana**, where your digital assets remain securely delegated, conditions stay completely private inside **Magicblock Private Ephemeral Rollups (PER / TEE)**, and execution happens automatically when silence becomes truth. 
 
