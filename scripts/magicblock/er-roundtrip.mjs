@@ -16,7 +16,7 @@
  *   crank_undelegate (REG ER)          commit + undelegate the Switch back to base (fired state lands)
  *   crank_undelegate_beneficiaries (TEE)  *** THE CROSS-ER PROOF *** the TEE ix reads the now-base
  *                                      Switch to confirm it fired, then reveals the BeneficiarySet
- *   distribute_assets (base)           pay beneficiaries after both delegated accounts settle
+ *   distribute_assets + complete_payout (base) pay beneficiaries atomically after both delegated accounts settle
  *   finalize_capsule (base)            close the three core PDAs to the protocol fee recipient
  *   verify (base)                       payouts landed and all capsule accounts are gone
  *
@@ -36,7 +36,7 @@
  */
 import {
   Connection, Keypair, PublicKey, SystemProgram,
-  Transaction, sendAndConfirmTransaction, LAMPORTS_PER_SOL,
+  Transaction, sendAndConfirmTransaction, LAMPORTS_PER_SOL, SYSVAR_INSTRUCTIONS_PUBKEY,
 } from '@solana/web3.js';
 import anchor from '@coral-xyz/anchor';
 import nacl from 'tweetnacl';
@@ -608,9 +608,13 @@ try {
       .remainingAccounts([
         { pubkey: ben1.publicKey, isSigner: false, isWritable: true },
         { pubkey: ben2.publicKey, isSigner: false, isWritable: true },
+        { pubkey: SYSVAR_INSTRUCTIONS_PUBKEY, isSigner: false, isWritable: false },
       ])
       .instruction();
-    const distributeSig = await sendBase([distributeIx], [ownerKp]);
+    const completeIx = await program.methods.completePayout()
+      .accountsPartial({ capsule, beneficiarySet: benSet, vault })
+      .instruction();
+    const distributeSig = await sendBase([distributeIx, completeIx], [ownerKp]);
     console.log('12. distributed live SOL leg on base:', distributeSig);
     const ben1After = await retry(() => baseConn.getBalance(ben1.publicKey));
     const ben2After = await retry(() => baseConn.getBalance(ben2.publicKey));

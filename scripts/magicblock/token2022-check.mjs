@@ -109,11 +109,13 @@ try {
   console.log('funded owner 0.3 SOL\n')
 
   // create the capsule (Switch + BeneficiarySet + Vault) on base. target_date = null.
+  const config = await program.account.feeConfig.fetch(feeConfig)
+  const feeRecipient = new PublicKey(config.feeRecipient ?? config.fee_recipient)
   await program.methods
     .createCapsule(new BN(86400), funder.publicKey, null)
     .accountsPartial({
       capsule, beneficiarySet: benSet, vault, owner: owner.publicKey, feeConfig,
-      platformFeeRecipient: PROGRAM_ID, systemProgram: SystemProgram.programId,
+      platformFeeRecipient: feeRecipient, systemProgram: SystemProgram.programId,
     })
     .rpc()
   check('created capsule (base)', true)
