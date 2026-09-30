@@ -5,13 +5,14 @@
 
 import { Connection, PublicKey } from '@solana/web3.js'
 import { SOLANA_CONFIG, HELIUS_CONFIG, PER_TEE, MAGICBLOCK_ER } from '@/constants'
+import { rpcFetchWithAuthFallback } from '@/lib/rpc-fetch'
 
 let cachedConnection: Connection | null = null
 let cachedFallbackConnection: Connection | null = null
 
 /**
- * Get the primary Solana base-layer connection. Helius is kept as an optional fallback so an
- * invalid or rate-limited provider key cannot block capsule reads and writes.
+ * Get Solana connection with Helius RPC (Base Layer).
+ * Use Helius when API key is set; otherwise fallback to public RPC.
  */
 export function getSolanaConnection(): Connection {
   if (cachedConnection) return cachedConnection
@@ -19,6 +20,7 @@ export function getSolanaConnection(): Connection {
   const rpcUrl = process.env.SOLANA_RPC_URL?.trim() || HELIUS_CONFIG.RPC_URL
   cachedConnection = new Connection(rpcUrl, {
     commitment: 'confirmed',
+    fetch: rpcFetchWithAuthFallback(HELIUS_CONFIG.RPC_URL_ALT),
   })
   return cachedConnection
 }
