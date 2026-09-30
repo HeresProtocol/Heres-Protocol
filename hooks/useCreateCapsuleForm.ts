@@ -11,7 +11,6 @@ import {
   createDelegatedCapsule,
   getCapsule,
   getCapsuleAccountLocations,
-  isCapsuleResumableDraftOnEr,
   registerCapsuleOwnerForAutomation,
 } from '@/lib/solana'
 import { getCapsulePDA } from '@/lib/program'
@@ -23,7 +22,7 @@ import {
   MAX_CAPSULE_MODIFICATIONS,
 } from '@/constants'
 import { daysToSeconds } from '@/utils/intent'
-import { getScaledUiAmountMints, getVaultTokenAccountsWithFallback, TOKEN_2022_PROGRAM_ID } from '@/lib/spl'
+import { getVaultTokenAccountsWithFallback } from '@/lib/spl'
 import { buildIntentSignedMessage } from '@/utils/intentAuth'
 import { bytesToBase64, sha256Hex } from '@/utils/intentClient'
 import { isValidEmail } from '@/utils/validation'
@@ -53,7 +52,6 @@ import {
   type WalletFungibleAsset,
 } from '@/lib/fungible-assets'
 
-const TOKEN_PROGRAM_ID = new PublicKey('TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA')
 
 export type CapsuleAssetType = 'token' | 'nft' | null
 export type InactivityUnit = 'minutes' | 'days' | 'months' | 'years'
@@ -173,14 +171,13 @@ export function useCreateCapsuleForm() {
   const [isPending, setIsPending] = useState(false)
   const [currentStep, setCurrentStep] = useState<string | null>(null)
   const [txHash, setTxHash] = useState<string | null>(null)
+  // Capsule PDA once creation succeeds; the page shows its confirmation screen instead of redirecting.
+  const [createdCapsuleAddress, setCreatedCapsuleAddress] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   // Per-field validation messages, keyed by schema path (e.g. 'assets.0.amount', 'beneficiaries.0.address',
   // 'beneficiaries._shares'). Populated on submit; cleared the moment the user edits any input below.
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({})
   const [existingCapsule, setExistingCapsule] = useState<boolean>(false)
-  // A capsule whose creation stalled mid-orchestration (delegated but never armed). Unlike an existing
-  // (live/fired) capsule it does NOT block the builder: submitting resumes it via createDelegatedCapsule.
-  const [resumableCapsule, setResumableCapsule] = useState<boolean>(false)
   const [existingCapsuleAddress, setExistingCapsuleAddress] = useState<string | null>(null)
   const [existingCapsuleCheck, setExistingCapsuleCheck] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle')
   const [existingCapsuleCheckError, setExistingCapsuleCheckError] = useState<string | null>(null)
@@ -209,6 +206,7 @@ export function useCreateCapsuleForm() {
     queryFn: async (): Promise<NftItem[]> => {
       const owner = publicKey!
       if (SOLANA_CONFIG.HELIUS_API_KEY) {
+        try {
         const res = await fetch(`/api/helius/nfts?wallet=${encodeURIComponent(owner.toBase58())}`, {
           cache: 'no-store',
         })
@@ -223,24 +221,20 @@ export function useCreateCapsuleForm() {
           symbol: item.symbol,
           imageUri: item.imageUri,
         }))
-        return nfts
+        // DAS currently represents service failures as an empty list, so confirm empty results
+        // against RPC rather than silently treating an unavailable indexer as an empty wallet.
+        if (nfts.length > 0) return nfts
+        } catch {
+          // Public RPC inventory remains available when the metadata service fails.
+        }
       }
 
-      const connection = getSolanaConnection()
-      const { value } = await connection.getParsedTokenAccountsByOwner(owner, { programId: TOKEN_PROGRAM_ID })
-      const nfts: NftItem[] = value
-        .filter((acc) => {
-          const info = acc.account?.data?.parsed?.info
-          if (!info?.tokenAmount) return false
-          const decimals = Number(info.tokenAmount.decimals)
-          const amount = info.tokenAmount.amount ?? info.tokenAmount.uiAmount
-          return decimals === 0 && (Number(amount) === 1 || amount === '1')
-        })
-        .map((acc) => {
-          const info = acc.account?.data?.parsed?.info
-          const mint = info?.mint ?? ''
-          return { mint, name: undefined, symbol: undefined }
-        })
+      const accounts = await getVaultTokenAccountsWithFallback(
+        [getSolanaFallbackConnection(), getSolanaConnection()], owner
+      )
+      const nfts: NftItem[] = accounts
+        .filter((account) => account.decimals === 0 && account.amount === 1n)
+        .map((account) => ({ mint: account.mint.toBase58() }))
       return nfts
     },
   })
@@ -253,7 +247,6 @@ export function useCreateCapsuleForm() {
     const checkExistingCapsule = async () => {
       if (!connected || !publicKey) {
         setExistingCapsule(false)
-        setResumableCapsule(false)
         setExistingCapsuleAddress(null)
         setExistingCapsuleCheck('idle')
         setExistingCapsuleCheckError(null)
@@ -269,16 +262,10 @@ export function useCreateCapsuleForm() {
       try {
         const locations = await getCapsuleAccountLocations(publicKey)
         if (locations.switch !== 'missing') {
-          // A delegated-but-un-armed draft is a stalled creation we can resume; every other existing
-          // state (live, fired, or an undelegated base capsule) blocks the builder as before.
-          const resumable =
-            locations.switch === 'delegated' && (await isCapsuleResumableDraftOnEr(publicKey))
-          setResumableCapsule(resumable)
-          setExistingCapsule(!resumable)
+          setExistingCapsule(true)
           setExistingCapsuleAddress(locations.switchAddress)
         } else if (hasExistingCapsuleAccounts(locations)) {
           setExistingCapsule(false)
-          setResumableCapsule(false)
           setExistingCapsuleAddress(null)
           setExistingCapsuleCheckError(
             'Existing capsule data needs recovery before a new capsule can be created. Refresh once, then contact support if this message remains.'
@@ -287,14 +274,12 @@ export function useCreateCapsuleForm() {
           return
         } else {
           setExistingCapsule(false)
-          setResumableCapsule(false)
           setExistingCapsuleAddress(null)
         }
         setExistingCapsuleCheck('ready')
       } catch (err) {
         console.error('Error checking for existing capsule:', err)
         setExistingCapsule(false)
-        setResumableCapsule(false)
         setExistingCapsuleAddress(null)
         setExistingCapsuleCheckError(
           'Heres could not check this wallet for an existing capsule. Retry before creating.'
@@ -306,16 +291,24 @@ export function useCreateCapsuleForm() {
   }, [connected, publicKey, existingCapsuleCheckAttempt])
 
   // Add a recipient and re-split shares evenly so they always total 100% (1 -> 100, 2 -> 50/50, ...).
-  const addBeneficiary = () => {
+  // With { keepShares: true } the existing shares are left as typed and the new row starts empty.
+  const addBeneficiary = (opts?: { keepShares?: boolean }) => {
     clearFieldErrors()
     setBeneficiaries((prev) => {
       const next: UiBeneficiary[] = [
         ...prev,
         { id: `b${beneficiaryIdRef.current++}`, chain: 'solana', address: '', amount: '', amountType: 'percentage', destinationChainSelector: '' },
       ]
+      if (opts?.keepShares) return next
       const shares = evenShares(next.length)
       return next.map((b, i) => ({ ...b, amount: shares[i] }))
     })
+  }
+
+  // Replace every share at once (e.g. "give remainder to last"); values are percentages as strings.
+  const setBeneficiaryShares = (shares: string[]) => {
+    clearFieldErrors()
+    setBeneficiaries((prev) => prev.map((b, i) => (shares[i] === undefined ? b : { ...b, amount: shares[i] })))
   }
 
   // Reset all shares to an even split (the "Split evenly" affordance).
@@ -340,16 +333,11 @@ export function useCreateCapsuleForm() {
     queryKey: queryKeys.wallet.tokens(publicKey?.toBase58() ?? ''),
     enabled: capsuleType === 'token' && connected && !!publicKey,
     queryFn: async (): Promise<WalletFungibleAsset[]> => {
-      // Use the primary/public endpoint first so an exhausted or revoked Helius key cannot block inventory.
+      // Use the public/fallback endpoint first so an exhausted keyed RPC cannot block wallet inventory.
       const accts = await getVaultTokenAccountsWithFallback(
-        [getSolanaConnection(), getSolanaFallbackConnection()],
+        [getSolanaFallbackConnection(), getSolanaConnection()],
         publicKey!
       )
-      const token2022Mints = accts
-        .filter((account) => account.tokenProgram.equals(TOKEN_2022_PROGRAM_ID))
-        .map((account) => account.mint)
-      const scaledMints = await getScaledUiAmountMints(getSolanaConnection(), token2022Mints)
-        .catch(() => getScaledUiAmountMints(getSolanaFallbackConnection(), token2022Mints))
       const tokens: WalletFungibleAsset[] = accts
         .filter((t) => t.amount > 0n && !(t.decimals === 0 && t.amount === 1n))
         .map((t) => ({
@@ -360,7 +348,6 @@ export function useCreateCapsuleForm() {
           balanceUi: Number(t.amount) / Math.pow(10, t.decimals),
           balanceBaseUnits: t.amount,
           tokenProgram: t.tokenProgram.toBase58(),
-          usesScaledDisplay: scaledMints.has(t.mint.toBase58()),
         }))
         .sort((a, b) => b.balanceUi - a.balanceUi)
       return tokens
@@ -432,12 +419,13 @@ export function useCreateCapsuleForm() {
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
   })()
 
-  // Remove a recipient and re-split the remaining shares evenly.
-  const removeBeneficiary = (index: number) => {
+  // Remove a recipient and re-split the remaining shares evenly ({ keepShares: true } leaves them as typed).
+  const removeBeneficiary = (index: number, opts?: { keepShares?: boolean }) => {
     clearFieldErrors()
     setBeneficiaries((prev) => {
       if (prev.length <= 1) return prev
       const next = prev.filter((_, i) => i !== index)
+      if (opts?.keepShares) return next
       const shares = evenShares(next.length)
       return next.map((b, i) => ({ ...b, amount: shares[i] }))
     })
@@ -508,8 +496,19 @@ export function useCreateCapsuleForm() {
     })
   }
 
-  const handleCreate = async () => {
+  // `overrides` lets the review screen submit exactly what it displayed (e.g. only the allocated part
+  // of each asset, with recipients' shares expressed over that deposit). Everything still goes
+  // through the same schema validation and on-chain checks below.
+  const handleCreate = async (overrides?: {
+    assetAmounts?: Record<string, string>
+    beneficiaries?: { address: string; share: string }[]
+  }) => {
     setError(null)
+    const createAssets: SelectedFungibleAsset[] = overrides?.assetAmounts
+      ? selectedAssets.map((asset) => ({ ...asset, amount: overrides.assetAmounts?.[asset.key] ?? asset.amount }))
+      : selectedAssets
+    const createBeneficiaries = overrides?.beneficiaries
+      ?? beneficiaries.map((b) => ({ address: b.address, share: b.amount }))
     if (!connected || !publicKey) {
       setError('Please connect your Solana wallet.')
       return
@@ -551,13 +550,13 @@ export function useCreateCapsuleForm() {
           ),
           allowMinutes: supportsMinuteMode,
         }).safeParse({
-          assets: selectedAssets.map((asset) => ({ assetKey: asset.key, amount: asset.amount })),
+          assets: createAssets.map((asset) => ({ assetKey: asset.key, amount: asset.amount })),
           inactivityValue: inactivityDays,
           inactivityUnit,
           targetDate,
           intent,
           intentEmail,
-          beneficiaries: beneficiaries.map((b) => ({ address: b.address, share: b.amount })),
+          beneficiaries: createBeneficiaries,
         })
       : createNftCapsuleInputSchema({
           ownerAddress: publicKey.toBase58(),
@@ -588,23 +587,13 @@ export function useCreateCapsuleForm() {
 
     try {
       const accountLocations = await getCapsuleAccountLocations(publicKey)
-      let isResume = false
       if (accountLocations.switch !== 'missing') {
-        // Only a delegated-but-un-armed draft (a stalled creation) is resumable; anything else is a
-        // live/fired/undelegated capsule that must block a new create.
-        const resumable =
-          accountLocations.switch === 'delegated' && (await isCapsuleResumableDraftOnEr(publicKey))
-        if (!resumable) {
-          setExistingCapsule(true)
-          setResumableCapsule(false)
-          setExistingCapsuleAddress(accountLocations.switchAddress)
-          setExistingCapsuleCheck('ready')
-          return
-        }
-        // Resume: createDelegatedCapsule continues from the first incomplete leg. The off-chain CRE
-        // secret was already registered in the first attempt, so that step is skipped below.
-        isResume = true
-      } else if (hasExistingCapsuleAccounts(accountLocations)) {
+        setExistingCapsule(true)
+        setExistingCapsuleAddress(accountLocations.switchAddress)
+        setExistingCapsuleCheck('ready')
+        return
+      }
+      if (hasExistingCapsuleAccounts(accountLocations)) {
         throw new Error(
           'Existing capsule data needs recovery before a new capsule can be created. Refresh once, then contact support if this message remains.'
         )
@@ -614,54 +603,51 @@ export function useCreateCapsuleForm() {
 
       // ---- Off-chain CRE: encrypt the human intent statement and register it (decoupled from chain).
       // The lean on-chain capsule never stores the statement; only the beneficiary split lives on-chain.
-      // On a resume this already ran in the first attempt, so skip the signature + registration here.
       const normalizedEmail = intentEmail.trim().toLowerCase()
       const intentMessage = intent.trim()
       const recipientEmailHash = await sha256Hex(normalizedEmail)
-      if (!isResume) {
-        const messageHash = await sha256Hex(intentMessage)
-        const timestamp = Date.now()
-        const signatureMessage = buildIntentSignedMessage({
-          action: 'register-secret',
-          owner: publicKey.toBase58(),
-          timestamp,
-          recipientEmailHash,
-          messageHash,
-        })
-        const signatureBytes = await signMessage(new TextEncoder().encode(signatureMessage))
-        const signature = bytesToBase64(signatureBytes)
+      const messageHash = await sha256Hex(intentMessage)
+      const timestamp = Date.now()
+      const signatureMessage = buildIntentSignedMessage({
+        action: 'register-secret',
+        owner: publicKey.toBase58(),
+        timestamp,
+        recipientEmailHash,
+        messageHash,
+      })
+      const signatureBytes = await signMessage(new TextEncoder().encode(signatureMessage))
+      const signature = bytesToBase64(signatureBytes)
 
-        const secretRes = await fetch('/api/intent-delivery/register', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            owner: publicKey.toBase58(),
-            recipientEmail: normalizedEmail,
-            message: intentMessage,
-            timestamp,
-            signature,
-          }),
-        })
-        let secretJson: any
-        try {
-          secretJson = await secretRes.json()
-        } catch {
-          throw new Error(`CRE register returned ${secretRes.status} with empty response`)
-        }
-        if (!secretRes.ok) {
-          throw new Error(secretJson?.error || 'Failed to register CRE secret')
-        }
+      const secretRes = await fetch('/api/intent-delivery/register', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          owner: publicKey.toBase58(),
+          recipientEmail: normalizedEmail,
+          message: intentMessage,
+          timestamp,
+          signature,
+        }),
+      })
+      let secretJson: any
+      try {
+        secretJson = await secretRes.json()
+      } catch {
+        throw new Error(`CRE register returned ${secretRes.status} with empty response`)
+      }
+      if (!secretRes.ok) {
+        throw new Error(secretJson?.error || 'Failed to register CRE secret')
       }
 
       // Fungible assets use proportional shares. NFT capsules still store their unique recipients as
       // beneficiaries (even shares) so any SOL rent swept at settlement has a deterministic route.
       const nftRecipientAddresses = [...new Set(rawNftAssignments.map((a) => a.recipient.trim()))]
       const leanBeneficiaries = capsuleType === 'token'
-        ? beneficiaries
-            .filter((b) => b.address.trim() && (b.chain ?? 'solana') !== 'evm')
+        ? createBeneficiaries
+            .filter((b) => b.address.trim())
             .map((b) => ({
               pubkey: new PublicKey(b.address.trim()),
-              shareBps: Math.round(parseFloat(b.amount || '0') * 100),
+              shareBps: Math.round(parseFloat(b.share || '0') * 100),
             }))
         : nftRecipientAddresses.map((address, index) => {
             const base = Math.floor(10000 / nftRecipientAddresses.length)
@@ -687,7 +673,7 @@ export function useCreateCapsuleForm() {
 
       // ---- Deposit amounts: one transaction per fungible asset, or one unit per NFT ----
       const fungibleDeposits = capsuleType === 'token'
-        ? selectedAssets.map((asset) => {
+        ? createAssets.map((asset) => {
             const units = parseDecimalToBaseUnits(asset.amount, asset.decimals)
             if (units == null) {
               throw new Error(`Enter a valid ${asset.symbol} amount with at most ${asset.decimals} decimal places.`)
@@ -760,7 +746,7 @@ export function useCreateCapsuleForm() {
         if (intentReminderEnabled) {
           try {
             const reminderTimestamp = Date.now()
-            const singleFungibleAsset = selectedAssets.length === 1 ? selectedAssets[0] : null
+            const singleFungibleAsset = createAssets.length === 1 ? createAssets[0] : null
             const reminderSignatureMessage = buildIntentSignedMessage({
               action: 'register-reminder',
               owner: publicKey.toBase58(),
@@ -789,7 +775,7 @@ export function useCreateCapsuleForm() {
                       ? singleFungibleAsset.mint
                         ? `${singleFungibleAsset.symbol} (${singleFungibleAsset.mint})`
                         : 'Solana'
-                      : `${selectedAssets.length} assets (${selectedAssets.map((asset) => asset.symbol).join(', ')})`,
+                      : `${createAssets.length} assets (${createAssets.map((asset) => asset.symbol).join(', ')})`,
                 assetMint:
                   capsuleType === 'nft' && selectedNftMints.length === 1
                     ? selectedNftMints[0]
@@ -806,7 +792,7 @@ export function useCreateCapsuleForm() {
                     : undefined,
                 beneficiaryCount:
                   capsuleType === 'token'
-                    ? beneficiaries.filter((b) => b.address.trim()).length
+                    ? createBeneficiaries.filter((b) => b.address.trim()).length
                     : nftRecipients.filter((r) => r.address.trim()).length,
                 inactivityLabel: formatInactivityLabel(inactivityDays, inactivityUnit) || 'Not configured',
                 delayDays: parseInt(delayDays, 10) || 0,
@@ -822,22 +808,21 @@ export function useCreateCapsuleForm() {
       }
 
       if (ownerBase58) {
-        setCurrentStep('Registering automation...')
-        console.log('[Automation] Registering capsule owner for crank discovery...')
-        let ownerRegistered = false
-        for (let attempt = 0; attempt < 3 && !ownerRegistered; attempt++) {
-          try {
-            await registerCapsuleOwnerForAutomation(ownerBase58)
-            ownerRegistered = true
-            console.log('[Automation] Owner registration successful.')
-          } catch (registryErr: any) {
-            console.warn(`[Automation] Owner registration failed (attempt ${attempt + 1}/3):`, registryErr?.message)
-            if (attempt < 2) await sleep(1500 * (attempt + 1))
+        // Backstop only (the on-chain crank is already scheduled), so it runs in the background and
+        // never holds up the success screen.
+        void (async () => {
+          for (let attempt = 0; attempt < 3; attempt++) {
+            try {
+              await registerCapsuleOwnerForAutomation(ownerBase58)
+              console.log('[Automation] Owner registration successful.')
+              return
+            } catch (registryErr: any) {
+              console.warn(`[Automation] Owner registration failed (attempt ${attempt + 1}/3):`, registryErr?.message)
+              if (attempt < 2) await sleep(1500 * (attempt + 1))
+            }
           }
-        }
-        if (!ownerRegistered) {
           console.warn('[Automation] Owner registration for crank discovery did not succeed; the off-chain crank backstop may take longer to discover this capsule.')
-        }
+        })()
       }
 
       // Delegation to the TEE + the autonomous ScheduleTask crank already ran inside
@@ -848,8 +833,8 @@ export function useCreateCapsuleForm() {
 
       toast({ message: 'Capsule created', variant: 'success' })
 
-      // Redirect to capsules page after successful creation
-      window.location.assign('/capsules')
+      // The create page shows its confirmation screen (with links to the dashboard and capsule).
+      setCreatedCapsuleAddress(getCapsulePDA(publicKey)[0].toBase58())
     } catch (err: any) {
       console.error('Error creating capsule:', err)
       const rawErrorMessage = err.message || 'Failed to create capsule'
@@ -867,7 +852,7 @@ export function useCreateCapsuleForm() {
             const createdCapsule = await getCapsule(publicKey)
             if (createdCapsule && createdCapsule.isActive) {
               toast({ message: 'Capsule created', variant: 'success' })
-              window.location.assign('/capsules')
+              setCreatedCapsuleAddress(getCapsulePDA(publicKey)[0].toBase58())
               setIsPending(false)
               return
             }
@@ -996,10 +981,10 @@ export function useCreateCapsuleForm() {
     isPending,
     currentStep,
     txHash,
+    createdCapsuleAddress,
     error,
     fieldErrors,
     existingCapsule,
-    resumableCapsule,
     existingCapsuleAddress,
     existingCapsuleCheck,
     existingCapsuleCheckError,
@@ -1013,6 +998,8 @@ export function useCreateCapsuleForm() {
     // NFT flow
     nftList,
     nftListLoading,
+    nftListError: nftQuery.isError,
+    retryNfts: () => nftQuery.refetch(),
     selectedNftMints,
     nftRecipients,
     nftAssignments,
@@ -1036,6 +1023,7 @@ export function useCreateCapsuleForm() {
     minTargetDate,
     // beneficiary handlers
     addBeneficiary,
+    setBeneficiaryShares,
     splitEvenly,
     removeBeneficiary,
     updateBeneficiary,

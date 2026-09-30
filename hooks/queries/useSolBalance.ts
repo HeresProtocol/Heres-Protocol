@@ -2,7 +2,7 @@
 
 import { useQuery } from '@tanstack/react-query'
 import type { PublicKey } from '@solana/web3.js'
-import { getSolanaConnection } from '@/config/solana'
+import { getSolanaConnection, getSolanaFallbackConnection } from '@/config/solana'
 import { queryKeys } from '@/lib/query/keys'
 
 /**
@@ -22,7 +22,13 @@ export function useSolBalance(publicKey: PublicKey | null) {
     refetchInterval: 30_000,
     queryFn: async () => {
       if (!publicKey) return 0
-      return getSolanaConnection().getBalance(publicKey)
+      // Fall back to the public endpoint so an exhausted or unreachable keyed RPC
+      // never leaves the balance blank (the token list already reads this way).
+      try {
+        return await getSolanaConnection().getBalance(publicKey)
+      } catch {
+        return getSolanaFallbackConnection().getBalance(publicKey)
+      }
     },
   })
 

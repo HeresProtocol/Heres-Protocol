@@ -4,11 +4,10 @@ import { usePathname } from 'next/navigation'
 import type { ReactNode } from 'react'
 
 /**
- * Renders the global app chrome (Navbar + Footer) around page content, EXCEPT on
- * the marketing landing route ("/"), which ships its own self-contained chrome
- * (MarketingNav / MarketingFooter) and full-bleed background. nav/footer are
- * passed as slots so this client component never imports the server/client
- * chrome directly.
+ * Renders the global app chrome (Navbar + Footer) around app content, except on
+ * routes that ship their own full-bleed chrome. The landing page and capsule
+ * creation wizard both own their header/footer treatment and must not inherit
+ * the legacy app shell.
  */
 export function SiteChrome({
   nav,
@@ -20,10 +19,10 @@ export function SiteChrome({
   children: ReactNode
 }) {
   const pathname = usePathname()
-  const isLanding = pathname === '/'
+  const isSelfContained = pathname === '/' || pathname === '/create' || pathname === '/pricing' || pathname === '/dashboard' || pathname === '/capsules' || pathname?.startsWith('/capsules/')
 
-  if (isLanding) {
-    // The landing page provides its own <main>, header and footer.
+  if (isSelfContained) {
+    // These pages provide their own main surface and navigation.
     return <>{children}</>
   }
 

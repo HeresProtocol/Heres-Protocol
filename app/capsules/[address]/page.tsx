@@ -1,10 +1,26 @@
 'use client'
 
-import { useState, useEffect, useMemo, useRef } from 'react'
-import { useParams, useRouter } from 'next/navigation'
+import { useEffect, useMemo, useState } from 'react'
+import { useParams, useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { useHeresWallet } from '@/hooks/useHeresWallet'
-import { Check, Eye, RefreshCw, HeartPulse, Plus, Pencil } from 'lucide-react'
+import { CreateShell } from '@/components/create/CreateShell'
+import { CREATE_RIBBONS } from '@/components/create/ribbons'
+import { DeleteCapsuleDialog, CapsuleDeleted } from '@/components/dashboard/DeleteCapsuleDialog'
+import { HdIcon } from '@/components/dashboard/icons'
+import {
+  agoWords,
+  capsuleCode,
+  capsuleTitle,
+  forgetCapsuleLabels,
+  formatPeriod,
+  formatRemaining,
+  joinNames,
+  longDate,
+  readCapsuleLabels,
+  triggerShort,
+  type CapsuleLabels,
+} from '@/components/dashboard/meta'
 import {
   executeIntent,
   distributeAssets,
@@ -18,33 +34,14 @@ import {
 } from '@/lib/solana'
 import { getOrMintTeeToken } from '@/lib/tee'
 import { getProgramId, getSolanaConnection } from '@/config/solana'
-import { MAGICBLOCK_ER, PER_TEE, getNetworkDisplayLabel } from '@/constants'
-import { formatDuration } from '@/utils/intent'
+import { PER_TEE, getExplorerUrl, getNetworkDisplayLabel } from '@/constants'
 import { buildIntentSignedMessage } from '@/utils/intentAuth'
 import { bytesToBase64 } from '@/utils/intentClient'
 import { inferAssetConfig } from '@/lib/assets'
-import {
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  ResponsiveContainer,
-  Area,
-  AreaChart,
-} from 'recharts'
-import { SectionEyebrow, ServiceMetaCard, ServiceMetaGrid, ServicePageHeader, ServiceSection } from '@/components/ui/service-page'
-import {
-  Button,
-  CopyButton,
-  StatusChip,
-  AddressPill,
-  ConfirmDialog,
-  useToast,
-} from '@/components/ui'
-import { maskAddress, timeAgo } from '@/lib/format'
+import { ConfirmDialog, useToast } from '@/components/ui'
+import { maskAddress } from '@/lib/format'
 import { normalizeTxError } from '@/lib/errors'
 import { useCapsuleDetail } from '@/hooks/queries/useCapsuleDetail'
-import { useAssetPrice } from '@/hooks/queries/useAssetPrice'
 import { WithdrawFundsDialog } from '@/components/capsule/WithdrawFundsDialog'
 import { AddFundsDialog } from '@/components/capsule/AddFundsDialog'
 import { EditBeneficiariesDialog } from '@/components/capsule/EditBeneficiariesDialog'
@@ -53,8 +50,10 @@ import { queryKeys } from '@/lib/query/keys'
 import { isAdminWallet } from '@/lib/admin'
 import { PrivyLoginButton } from '@/components/PrivyLoginButton'
 import { getCapsuleVaultPDA } from '@/lib/program'
-import { getVaultTokenAccounts, TOKEN_2022_PROGRAM_ID } from '@/lib/spl'
-import { formatBaseUnits, planMultiMintCancellation } from '@/lib/fungible-assets'
+import { getVaultTokenAccounts } from '@/lib/spl'
+import { formatBaseUnits, planMultiMintCancellation, type WalletFungibleAsset } from '@/lib/fungible-assets'
+import { useAssetCatalog, isDevnet, RECIPIENT_COLORS } from '@/components/create/useAssetCatalog'
+import { fmtAmount, fmtUsd, maskAddr } from '@/components/create/ui'
 import {
   areCapsuleAccountsOnBase,
   capsuleSettlementGuidance,
@@ -62,73 +61,28 @@ import {
   isCapsulePreFire,
 } from '@/lib/capsule-lifecycle'
 
-const CHART_RANGES = [
-  { key: '6h', label: '6h', days: 1, hoursFilter: 6 },
-  { key: '12h', label: '12h', days: 1, hoursFilter: 12 },
-  { key: '1d', label: '1D', days: 1, hoursFilter: null },
-  { key: '1mo', label: '1M', days: 30, hoursFilter: null },
-  { key: '1y', label: '1Y', days: 365, hoursFilter: null },
-] as const
-
-type IntentParsed =
-  | {
-    type: 'token'
-    intent?: string
-    totalAmount?: string
-    assetSymbol?: string
-    assetMint?: string | null
-    beneficiaries?: any[]
-    inactivityDays?: number
-    delayDays?: number
-    cre?: {
-      enabled?: boolean
-      secretRef?: string
-      secretHash?: string
-      recipientEmailHash?: string
-      recipientEmail?: string
-      deliveryChannel?: 'email' | 'sms'
-    }
-    // Legacy payload key support
-    premium?: {
-      enabled?: boolean
-      secretRef?: string
-      secretHash?: string
-      recipientEmailHash?: string
-      recipientEmail?: string
-      deliveryChannel?: 'email' | 'sms'
-    }
-  }
-  | {
-    type: 'nft'
-    intent?: string
-    nftMints?: string[]
-    nftRecipients?: string[]
-    assetSymbol?: string
-    assetMint?: string | null
-    inactivityDays?: number
-    delayDays?: number
-    cre?: {
-      enabled?: boolean
-      secretRef?: string
-      secretHash?: string
-      recipientEmailHash?: string
-      recipientEmail?: string
-      deliveryChannel?: 'email' | 'sms'
-    }
-    // Legacy payload key support
-    premium?: {
-      enabled?: boolean
-      secretRef?: string
-      secretHash?: string
-      recipientEmailHash?: string
-      recipientEmail?: string
-      deliveryChannel?: 'email' | 'sms'
-    }
-  }
+type IntentDeliveryConfig = {
+  enabled?: boolean
+  secretRef?: string
+  secretHash?: string
+  recipientEmailHash?: string
+  recipientEmail?: string
+  deliveryChannel?: 'email' | 'sms'
+}
+type IntentParsed = {
+  type: 'token' | 'nft'
+  intent?: string
+  assetSymbol?: string
+  assetMint?: string | null
+  cre?: IntentDeliveryConfig
+  // Legacy payload key support
+  premium?: IntentDeliveryConfig
+}
 
 export default function CapsuleDetailPage() {
   const params = useParams()
   const router = useRouter()
+  const search = useSearchParams()
   const wallet = useHeresWallet()
   // Detail pages are scoped to the capsule owner; admins may view any capsule.
   // This is a UI scope only -- the underlying account is public on-chain, while
@@ -139,9 +93,6 @@ export default function CapsuleDetailPage() {
   const address = typeof params?.address === 'string' ? params.address : null
 
   // UI-only state
-  const [chartRange, setChartRange] = useState<(typeof CHART_RANGES)[number]['key']>('1d')
-  const [displayedSolPrice, setDisplayedSolPrice] = useState<number>(0)
-  const displayedPriceRef = useRef(0)
   const [actionLoading, setActionLoading] = useState<string | null>(null)
   const [actionResult, setActionResult] = useState<{ type: 'success' | 'error' | 'progress'; message: string } | null>(null)
   const [intentDispatchLoading, setIntentDispatchLoading] = useState(false)
@@ -149,14 +100,17 @@ export default function CapsuleDetailPage() {
   const [revealing, setRevealing] = useState(false)
   const [revealError, setRevealError] = useState<string | null>(null)
 
-  // ConfirmDialog open state for destructive actions
-  const [confirmCancel, setConfirmCancel] = useState(false)
+  // Destructive-action dialogs
+  const [deleteOpen, setDeleteOpen] = useState(false)
+  const [cancelledReceipt, setCancelledReceipt] = useState<string | null>(null)
+  const [deletedTitle, setDeletedTitle] = useState('Your capsule')
   const [confirmUndelegate, setConfirmUndelegate] = useState(false)
   const [confirmFinalize, setConfirmFinalize] = useState(false)
   // Asset-management dialogs
   const [showWithdraw, setShowWithdraw] = useState(false)
   const [showAddFunds, setShowAddFunds] = useState(false)
   const [showEditBeneficiaries, setShowEditBeneficiaries] = useState(false)
+  const [copied, setCopied] = useState<string | null>(null)
 
   const {
     capsule,
@@ -189,44 +143,45 @@ export default function CapsuleDetailPage() {
   const assetConfig = inferAssetConfig(meta ?? undefined)
   const intentConfig = intentParsed?.cre ?? intentParsed?.premium
 
-  const rangeConfig = useMemo(() => CHART_RANGES.find((r) => r.key === chartRange) ?? CHART_RANGES[2], [chartRange])
+  // Names typed at creation (this browser only), used for the title and recipient rows.
+  const [labels, setLabels] = useState<CapsuleLabels | null>(null)
+  useEffect(() => setLabels(readCapsuleLabels(capsule?.capsuleAddress)), [capsule?.capsuleAddress])
 
-  const { currentSolPrice, chartData, chartLoading } = useAssetPrice({
-    coingeckoId: assetConfig.coingeckoId,
-    rangeKey: rangeConfig.key,
-    days: rangeConfig.days,
-    hoursFilter: rangeConfig.hoursFilter,
-    isToken,
-    isNft,
-  })
+  // Vault assets, named and priced the same way as the capsule builder.
+  const held = useMemo<WalletFungibleAsset[]>(
+    () => [
+      ...(vaultAssets.withdrawableSol > 0
+        ? [{ key: 'sol', mint: null, decimals: 9, symbol: 'SOL', balanceUi: vaultAssets.withdrawableSol / 1e9, balanceBaseUnits: BigInt(vaultAssets.withdrawableSol), tokenProgram: null }]
+        : []),
+      ...vaultAssets.tokens.map((t) => ({
+        key: t.mint.toBase58(),
+        mint: t.mint.toBase58(),
+        decimals: t.decimals,
+        symbol: maskAddr(t.mint.toBase58(), 4, 4),
+        balanceUi: Number(formatBaseUnits(t.amount, t.decimals)),
+        balanceBaseUnits: t.amount,
+        tokenProgram: t.tokenProgram.toBase58(),
+      })),
+    ],
+    [vaultAssets]
+  )
+  const { catalog } = useAssetCatalog(held)
 
-  // Keep ref in sync for animation start value
-  displayedPriceRef.current = displayedSolPrice
-
-  // Effect 8: price ticker animation (pure UI - kept in page as specified)
+  // Opened from the dashboard's "Delete capsule" menu item.
+  const wantsDelete = search?.get('delete') === '1'
   useEffect(() => {
-    if (currentSolPrice == null) return
-    const start = displayedPriceRef.current
-    const diff = currentSolPrice - start
-    if (Math.abs(diff) < 0.001) {
-      setDisplayedSolPrice(currentSolPrice)
-      return
+    if (wantsDelete && capsule && isOwner && isCapsulePreFire(capsule.executedAt)) setDeleteOpen(true)
+  }, [wantsDelete, capsule, isOwner])
+
+  const copy = async (value: string) => {
+    try {
+      await navigator.clipboard.writeText(value)
+      setCopied(value)
+      setTimeout(() => setCopied((c) => (c === value ? null : c)), 1400)
+    } catch {
+      /* clipboard blocked */
     }
-    const duration = 500
-    const startTime = performance.now()
-    let rafId: number
-    const tick = (now: number) => {
-      const elapsed = now - startTime
-      const t = Math.min(elapsed / duration, 1)
-      const ease = 1 - Math.pow(1 - t, 2)
-      const value = start + diff * ease
-      setDisplayedSolPrice(value)
-      displayedPriceRef.current = value
-      if (t < 1) rafId = requestAnimationFrame(tick)
-    }
-    rafId = requestAnimationFrame(tick)
-    return () => cancelAnimationFrame(rafId)
-  }, [currentSolPrice])
+  }
 
   // ---------------------------------------------------------------------------
   // Mutation handlers (bodies unchanged; invalidate instead of setCapsule)
@@ -308,7 +263,7 @@ export default function CapsuleDetailPage() {
       toast({ message: 'Capsule finalized and on-chain accounts closed.', variant: 'success' })
       setActionResult({ type: 'success', message: `Finalize Capsule TX: ${tx}` })
       await queryClient.invalidateQueries({ queryKey: queryKeys.capsule.all })
-      router.push('/capsules')
+      router.push('/dashboard')
     } catch (err: any) {
       console.error('[Finalize Capsule] Error:', err)
       const msg = normalizeTxError(err)
@@ -410,7 +365,9 @@ export default function CapsuleDetailPage() {
       setActionResult({ type: 'success', message: `Capsule cancelled and assets reclaimed. TX: ${tx}` })
       toast({ message: 'Capsule cancelled and assets reclaimed.', variant: 'success' })
       // The accounts are now closed; send the owner back to the list.
-      setTimeout(() => router.push('/capsules'), 2500)
+      setCancelledReceipt(capsule.capsuleAddress)
+      forgetCapsuleLabels(capsule.capsuleAddress)
+      void queryClient.invalidateQueries({ queryKey: ['dashboard'] })
     } catch (err: any) {
       console.error('[Cancel Capsule] Error:', err)
       const msg = normalizeTxError(err)
@@ -503,41 +460,59 @@ export default function CapsuleDetailPage() {
     }
   }
 
+
   // ---------------------------------------------------------------------------
   // Render
   // ---------------------------------------------------------------------------
 
+  if (cancelledReceipt) {
+    return (
+      <CreateShell ribbons={CREATE_RIBBONS} success>
+        <CapsuleDeleted title={deletedTitle} code={capsuleCode(cancelledReceipt)} />
+      </CreateShell>
+    )
+  }
+
+  const back = (
+    <Link href="/dashboard" className="hd-back">
+      <HdIcon.ArrowLeft /> Back to dashboard
+    </Link>
+  )
+
   if (capsuleLoading) {
     return (
-      <div className="min-h-screen bg-hero text-Heres-white flex items-center justify-center">
-        <div className="flex flex-col items-center gap-4">
-          <RefreshCw className="h-8 w-8 animate-spin text-Heres-accent" />
-          <p className="text-Heres-muted">Loading capsule...</p>
+      <CreateShell ribbons={CREATE_RIBBONS}>
+        <div className="cf-card hd-card hd-card--detail">
+          {back}
+          <div className="hd-skeleton" role="status" aria-label="Loading capsule">
+            <div className="hd-sk hd-sk--title" />
+            <div className="hd-sk hd-sk--banner" />
+            <div className="hd-sk hd-sk--panel" />
+            <div className="hd-sk hd-sk--panel" />
+          </div>
         </div>
-      </div>
+      </CreateShell>
     )
   }
 
   if (capsuleError || !capsule) {
     return (
-      <div className="min-h-screen bg-hero text-Heres-white pt-24 pb-16 px-4">
-        <div className="max-w-2xl mx-auto text-center">
-          <p className="text-red-400 mb-6">{capsuleError || 'Capsule not found'}</p>
-          <div className="flex flex-wrap items-center justify-center gap-3">
-            {capsuleError === 'Failed to load capsule' && (
-              <Button variant="primary" size="md" onClick={() => void retryCapsule()}>
-                Retry
-              </Button>
-            )}
-            <Link
-              href="/capsules"
-              className="inline-flex items-center gap-2 rounded-lg border border-Heres-border bg-Heres-card/80 px-4 py-2 text-Heres-white hover:border-Heres-accent/40"
-            >
-              My Capsule
-            </Link>
-          </div>
+      <CreateShell ribbons={CREATE_RIBBONS}>
+        <div className="cf-card hd-card hd-card--detail">
+          {back}
+          <section className="hd-empty" role="alert">
+            <span className="hd-empty__icon hd-empty__icon--warn"><HdIcon.Alert /></span>
+            <h2>{capsuleError === 'Failed to load capsule' ? 'We couldn’t load this capsule' : 'Capsule not found'}</h2>
+            <p>{capsuleError === 'Failed to load capsule' ? 'The network didn’t respond. Your capsule is unaffected — try again in a moment.' : 'This capsule doesn’t exist anymore, or the link is incomplete.'}</p>
+            <div className="hd-empty__actions">
+              {capsuleError === 'Failed to load capsule' && (
+                <button type="button" className="cf-btn cf-btn--light" onClick={() => void retryCapsule()}>Try again</button>
+              )}
+              <Link href="/dashboard" className="cf-btn cf-btn--ghost">Go to dashboard</Link>
+            </div>
+          </section>
         </div>
-      </div>
+      </CreateShell>
     )
   }
 
@@ -545,34 +520,28 @@ export default function CapsuleDetailPage() {
   // connect or to open their own capsule instead of another wallet's.
   if (!isOwner && !isAdmin) {
     return (
-      <div className="min-h-screen bg-hero text-Heres-white pt-24 pb-16 px-4">
-        <div className="max-w-md mx-auto text-center rounded-2xl border border-Heres-border bg-Heres-card/60 p-8 sm:p-12">
-          <h2 className="mb-3 font-serif text-2xl font-semibold text-vellum">
-            {wallet.connected ? 'Not your capsule' : 'Sign in to continue'}
-          </h2>
-          <p className="mb-6 text-Heres-muted">
-            {wallet.connected
-              ? 'This capsule belongs to another wallet. You can view and manage your own capsule instead.'
-              : 'Capsule details are private to their owner. Sign in to view your own capsule.'}
-          </p>
-          <div className="flex flex-col items-center gap-3">
-            {!wallet.connected && (
-              <div className="wallet-menu-container flex justify-center">
-                <PrivyLoginButton />
-              </div>
-            )}
-            <Link
-              href="/capsules"
-              className="inline-flex items-center justify-center gap-2 rounded-lg border border-Heres-border bg-Heres-card/80 px-4 py-2 text-sm font-medium text-Heres-white transition-colors hover:border-Heres-accent/40"
-            >
-              Go to My Capsule
-            </Link>
-          </div>
+      <CreateShell ribbons={CREATE_RIBBONS}>
+        <div className="cf-card hd-card hd-card--detail">
+          {back}
+          <section className="hd-empty">
+            <span className="hd-empty__icon"><HdIcon.Lock /></span>
+            <h2>{wallet.connected ? 'This isn’t your capsule' : 'Sign in to see this capsule'}</h2>
+            <p>
+              {wallet.connected
+                ? 'It belongs to another wallet. Capsule details are private to their owner.'
+                : 'Capsule details are private to their owner. Connect the wallet that created it.'}
+            </p>
+            <div className="hd-empty__actions">
+              {!wallet.connected && <PrivyLoginButton />}
+              <Link href="/dashboard" className="cf-btn cf-btn--ghost">Go to dashboard</Link>
+            </div>
+          </section>
         </div>
-      </div>
+      </CreateShell>
     )
   }
 
+  /* ---------------- derived state (same rules as before) ---------------- */
   // Effective due time = the earlier of the inactivity deadline and the optional fixed target date.
   // The inactivity deadline slides forward on each heartbeat, so once it passes the fixed date the
   // date becomes the binding trigger - mirrors the on-chain `inactivity_due || date_due` condition.
@@ -589,31 +558,144 @@ export default function CapsuleDetailPage() {
   const isDelegated = hasDelegatedCapsuleAccounts(accountLocations)
   const accountsOnBase = areCapsuleAccountsOnBase(accountLocations)
   const beneficiarySetDelegated = accountLocations?.beneficiarySet === 'delegated'
-  const partiallyUndelegated = Boolean(
-    accountLocations &&
-      isDelegated &&
-      (accountLocations.switch === 'base' || accountLocations.beneficiarySet === 'base')
-  )
-  const lastUpdatedMs = capsule.lastActivity ? capsule.lastActivity * 1000 : null
-  const targetDateMs = capsule.targetDate != null ? capsule.targetDate * 1000 : null
   // While delegated, the private beneficiary list is readable only by the owner via a TEE auth token.
   const privateStateHidden = beneficiarySetDelegated && isOwner && capsule.beneficiaries.length === 0
-  const vaultAssetCount = vaultAssets.tokens.length + (vaultAssets.withdrawableSol > 0 ? 1 : 0)
-  const isMultiAssetVault = isToken && vaultAssetCount > 1
+  const dateOnly = capsule.targetDate != null && capsule.inactivityPeriod >= 90 * 365 * 86400
 
+  const isExecuted = status === 'Executed' || Boolean(!capsule.isActive && capsule.executedAt)
+  const isExpired = status === 'Expired'
+  const isActive = status === 'Active'
+  const preFire = isCapsulePreFire(capsule.executedAt)
+  const isIntentDelivered = intentDeliveryStatus?.status === 'delivered' || intentDeliveryStatus?.status === 'dispatched'
+  const isDistributed = Boolean(isExecuted && distributionComplete)
+  const canExecute = Boolean(isOwner && isExpired && !isExecuted)
+  const canUndelegate = Boolean(isDelegated && !accountLocationsLoading && !accountLocationsError)
+  const canDistribute = Boolean(
+    isOwner && isExecuted && accountsOnBase && !isDistributed && !accountLocationsLoading && !accountLocationsError && !distributionLoading && !distributionError
+  )
+  const canDispatchCre = Boolean(isOwner && isExecuted && isDistributed && isIntentEnabled && !isIntentDelivered)
+  const settlementReady = Boolean(isExecuted && isDistributed && (!isIntentEnabled || isIntentDelivered))
+  const canFinalize = Boolean(isOwner && settlementReady && !isDelegated)
+  const canRefreshAutomation = Boolean(isOwner && (isExpired || isActive) && !isExecuted)
   // Proof-of-life is available only before the capsule fires.
-  const canCheckIn = Boolean(isOwner && capsule.isActive)
+  const canCheckIn = Boolean(isOwner && capsule.isActive && !dateOnly)
+  // Owner early-exit (pre-fire only). Withdraw requires the vault to actually hold something.
+  const canRecover = Boolean(isOwner && preFire && vaultAssets.hasWithdrawable && !vaultAssetsLoading && !vaultAssetsError)
+  // Deletion needs the Switch + BeneficiarySet on base; when still delegated the dialog offers that step first.
+  const canDelete = Boolean(isOwner && preFire && !accountLocationsLoading && !accountLocationsError && !vaultAssetsLoading && !vaultAssetsError)
+  const deleteNeedsPrepare = Boolean(isOwner && preFire && isDelegated && !accountsOnBase)
+  // Deposit works regardless of delegation state (the program reads the capsule as a raw AccountInfo).
+  const canAddFunds = Boolean(isOwner && preFire && isToken)
   // Legacy capsules remain editable. New lifecycles seal the TEE configuration before arming.
-  const canEditBeneficiaries = Boolean(
-    isToken
-      && isOwner
-      && !capsule.inheritanceSealed
-      && !capsule.executedAt
-      && capsule.beneficiaries.length > 0
+  const canEditBeneficiaries = Boolean(isToken && isOwner && !capsule.inheritanceSealed && !capsule.executedAt && capsule.beneficiaries.length > 0)
+
+  /* ---------------- display values ---------------- */
+  const recipientAddrs = capsule.beneficiaries.map((b) => b.pubkey.toBase58())
+  const title = capsuleTitle(labels, recipientAddrs)
+  const code = capsuleCode(capsule.capsuleAddress)
+  const funded = catalog.filter((a) => (a.balanceBaseUnits ?? 0n) > 0n)
+  const totalUsd = funded.length && funded.every((a) => a.usdPrice != null) ? funded.reduce((s, a) => s + (a.balanceUi ?? 0) * (a.usdPrice ?? 0), 0) : null
+  const valueText = vaultAssetsLoading
+    ? 'Loading…'
+    : totalUsd != null
+      ? fmtUsd(totalUsd)
+      : funded.length === 1
+        ? `${fmtAmount(funded[0].balanceUi)} ${funded[0].displaySymbol}`
+        : funded.length
+          ? `${funded.length} assets`
+          : 'Empty'
+  const nameOf = (addr: string) => labels?.names[addr] || ''
+  const labelNames = Object.values(labels?.names ?? {})
+  const recipientsText = recipientAddrs.length
+    ? joinNames(recipientAddrs.map((a) => nameOf(a) || maskAddr(a, 4, 4)))
+    : labelNames.length
+      ? joinNames(labelNames)
+      : privateStateHidden
+        ? 'Private'
+        : '—'
+  const recipientsWho = recipientAddrs.length
+    ? joinNames(recipientAddrs.map((a) => nameOf(a) || maskAddr(a, 4, 4)))
+    : labelNames.length
+      ? joinNames(labelNames)
+      : 'Your recipients'
+  const remaining = Math.max(0, effectiveDueTs - nowSec)
+  const elapsed = Math.min(1, Math.max(0, (nowSec - capsule.lastActivity) / Math.max(1, capsule.inactivityPeriod)))
+  const soon = isActive && remaining <= 14 * 86400
+  const statusChip = isExecuted
+    ? { tone: 'done', text: 'Executed' }
+    : status === 'Draft'
+      ? { tone: 'warn', text: 'Setup incomplete' }
+      : isExpired
+        ? { tone: 'warn', text: 'Trigger reached' }
+        : soon
+          ? { tone: 'warn', text: `${formatRemaining(remaining)} left` }
+          : { tone: 'ok', text: 'Active' }
+  // The note is registered off-chain against the owner, so the capsule metadata often doesn't carry it;
+  // fall back to what this browser recorded at creation.
+  const hasNote = Boolean(intentConfig?.enabled || isIntentEnabled || labels?.note)
+
+  // handleCancelCapsule sets cancelledReceipt only once the closing transaction confirms.
+  const runDelete = async () => {
+    setDeletedTitle(title)
+    await handleCancelCapsule()
+  }
+
+  /* ---------------- settlement steps (post-trigger) ---------------- */
+  type StepState = 'done' | 'current' | 'todo'
+  const steps: { key: string; title: string; text: string; state: StepState; action?: { label: string; run: () => void; busy: boolean; enabled: boolean } }[] = []
+  if (isExecuted || isExpired) {
+    steps.push({
+      key: 'execute',
+      title: 'Execute the capsule',
+      text: 'Marks the trigger as met and stops the capsule. Anyone can run this once the condition is reached.',
+      state: isExecuted ? 'done' : 'current',
+      action: canExecute ? { label: 'Execute now', run: handleExecuteIntent, busy: actionLoading === 'execute', enabled: !actionLoading } : undefined,
+    })
+    if (isDelegated || isExecuted) {
+      steps.push({
+        key: 'settle',
+        title: 'Move to Solana for settlement',
+        text: 'Brings the capsule and its recipient list back from the private rollup so assets can be paid out. Recipient addresses become public.',
+        state: !isExecuted ? 'todo' : isDelegated ? 'current' : 'done',
+        action: isExecuted && canUndelegate && isOwner ? { label: 'Move to Solana', run: () => setConfirmUndelegate(true), busy: actionLoading === 'undelegate', enabled: !actionLoading } : undefined,
+      })
+    }
+    steps.push({
+      key: 'distribute',
+      title: 'Transfer assets to recipients',
+      text: 'Pays every asset in the vault out by each recipient’s share.',
+      state: isDistributed ? 'done' : isExecuted && accountsOnBase ? 'current' : 'todo',
+      action: canDistribute ? { label: 'Transfer assets', run: handleDistributeAssets, busy: actionLoading === 'distribute', enabled: !actionLoading } : undefined,
+    })
+    if (isIntentEnabled) {
+      steps.push({
+        key: 'deliver',
+        title: 'Deliver your note',
+        text: 'Sends the encrypted note to your representative.',
+        state: isIntentDelivered ? 'done' : isDistributed ? 'current' : 'todo',
+        action: canDispatchCre && wallet.signMessage ? { label: 'Deliver note', run: handleIntentDispatch, busy: intentDispatchLoading, enabled: !intentDispatchLoading } : undefined,
+      })
+    }
+    steps.push({
+      key: 'finalize',
+      title: 'Close the capsule',
+      text: 'Closes the settled accounts so this wallet can create a new capsule. Reclaimed rent goes to the Heres protocol fee account.',
+      state: settlementReady && !isDelegated ? 'current' : 'todo',
+      action: canFinalize ? { label: 'Close capsule', run: () => setConfirmFinalize(true), busy: actionLoading === 'finalize', enabled: !actionLoading } : undefined,
+    })
+  }
+
+  const explorer = (value: string) => getExplorerUrl('address', value)
+  const Addr = ({ value }: { value: string }) => (
+    <span className="hd-addr">
+      <code title={value}>{maskAddr(value, 6, 6)}</code>
+      <button type="button" onClick={() => copy(value)} aria-label="Copy address">{copied === value ? <HdIcon.Check /> : <HdIcon.Copy />}</button>
+      <a href={explorer(value)} target="_blank" rel="noopener noreferrer" aria-label="Open in explorer"><HdIcon.External /></a>
+    </span>
   )
 
   return (
-    <div className="min-h-screen bg-hero text-Heres-white">
+    <CreateShell ribbons={CREATE_RIBBONS}>
       {/* Asset-management dialogs. key remounts each on open so internal form state starts fresh. */}
       <WithdrawFundsDialog
         key={showWithdraw ? 'withdraw-open' : 'withdraw-closed'}
@@ -643,32 +725,40 @@ export default function CapsuleDetailPage() {
         current={capsule.beneficiaries}
         onUpdated={invalidateCapsule}
       />
-      <ConfirmDialog
-        open={confirmCancel}
-        onClose={() => setConfirmCancel(false)}
-        onConfirm={() => { setConfirmCancel(false); handleCancelCapsule() }}
-        title="Cancel Capsule"
-        description={
-          vaultAssets.tokens.length > 1
-            ? `This refunds all funds and account rent, then permanently closes the capsule. Your wallet will request ${vaultAssets.tokens.length} approvals so each token account can be recovered safely. This cannot be undone.`
-            : 'This refunds all funds and account rent to your wallet and permanently closes the capsule. This cannot be undone.'
-        }
-        confirmLabel="Cancel Capsule"
-        variant="danger"
-        typedConfirm="cancel"
-        loading={actionLoading === 'cancel'}
+      <DeleteCapsuleDialog
+        open={deleteOpen}
+        onClose={() => {
+          setDeleteOpen(false)
+          if (wantsDelete) router.replace(`/capsules/${capsule.capsuleAddress}`)
+        }}
+        title={title}
+        code={code}
+        valueText={valueText}
+        recipientsText={recipientsText}
+        recipientsWho={recipientsWho}
+        trigger={triggerShort(capsule.inactivityPeriod, capsule.targetDate)}
+        hasNote={hasNote}
+        needsPrepare={deleteNeedsPrepare}
+        checking={!canDelete}
+        preparing={actionLoading === 'undelegate'}
+        onPrepare={handleUndelegate}
+        tokenAccounts={vaultAssets.tokens.length}
+        deleting={actionLoading === 'cancel'}
+        progress={actionResult?.type === 'progress' ? actionResult.message : null}
+        error={actionResult?.type === 'error' ? actionResult.message : null}
+        onConfirm={runDelete}
       />
       <ConfirmDialog
         open={confirmUndelegate}
         onClose={() => setConfirmUndelegate(false)}
         onConfirm={() => { setConfirmUndelegate(false); handleUndelegate() }}
-        title="Undelegate from Ephemeral Rollup"
+        title="Move this capsule to Solana"
         description={
           <span>
-            Undelegating commits the private beneficiary list from the TEE to the <strong>public base layer</strong>. After this point the beneficiary addresses will be visible on-chain and <strong>will no longer be private</strong>. Only proceed if you are ready to settle the capsule publicly.
+            This commits the private recipient list from the TEE to the <strong>public Solana base layer</strong>. After this, recipient addresses are visible on-chain and <strong>no longer private</strong>. It’s required before assets can be transferred.
           </span>
         }
-        confirmLabel="Undelegate"
+        confirmLabel="Move to Solana"
         variant="danger"
         typedConfirm="undelegate"
         loading={actionLoading === 'undelegate'}
@@ -677,749 +767,276 @@ export default function CapsuleDetailPage() {
         open={confirmFinalize}
         onClose={() => setConfirmFinalize(false)}
         onConfirm={() => { setConfirmFinalize(false); handleFinalizeCapsule() }}
-        title="Finalize Capsule"
-        description="Finalize this settled capsule? This permanently closes its capsule, beneficiary, and vault accounts. Their reclaimed rent is sent to the Heres protocol fee account. You can create a fresh capsule afterward using the same wallet."
-        confirmLabel="Finalize Capsule"
+        title="Close this capsule"
+        description="This permanently closes the settled capsule, recipient and vault accounts. Their reclaimed rent is sent to the Heres protocol fee account. You can create a fresh capsule afterward with the same wallet."
+        confirmLabel="Close capsule"
         variant="danger"
         typedConfirm="finalize"
         loading={actionLoading === 'finalize'}
       />
 
-      <main className="pt-24 pb-16 px-4 sm:px-6 lg:px-8">
-        <div className="max-w-5xl mx-auto">
-          <ServicePageHeader
-            className="mb-6"
-            eyebrow={<SectionEyebrow>Capsule Detail</SectionEyebrow>}
-            title="Capsule"
-            description={`${isNft ? 'NFT capsule' : isMultiAssetVault ? `${vaultAssetCount}-asset token capsule` : `Token (${assetConfig.symbol}) capsule`} · Inactivity period: ${formatDuration(capsule.inactivityPeriod)}${targetDateMs != null ? ` · Fires by ${new Date(targetDateMs).toLocaleDateString()}` : ''}`}
-            statusLine={`Updated ${timeAgo(lastUpdatedMs)}`}
-            badges={
-              <>
-                <span className="font-mono text-sm text-Heres-muted" title={capsule.capsuleAddress}>
-                  {maskAddress(capsule.capsuleAddress)}
-                </span>
-                <span className="rounded-lg border border-Heres-border bg-Heres-surface/80 px-2.5 py-1 text-xs font-medium text-Heres-muted">
-                  v1.0
-                </span>
-                <StatusChip status={status} />
-                {isDelegated && <StatusChip status="delegated" />}
-              </>
-            }
-          />
+      <div className="cf-card hd-card hd-card--detail">
+        {back}
+        <header className="hd-dhead">
+          <div className="hd-dhead__title">
+            <h1>{title}</h1>
+            <span className="hd-code" title={capsule.capsuleAddress}>#{code}</span>
+            <span className={`hd-chip hd-chip--${statusChip.tone}`}>
+              {statusChip.tone === 'warn' ? <HdIcon.Alert /> : <i />}
+              {statusChip.text}
+            </span>
+          </div>
+          {isOwner && preFire && (
+            <button type="button" className="hd-delete-link" onClick={() => setDeleteOpen(true)} disabled={!canDelete || Boolean(actionLoading)} title={!canDelete ? 'Checking the capsule’s current state…' : undefined}>
+              <HdIcon.Trash /> Delete this capsule
+            </button>
+          )}
+        </header>
 
-          <ServiceMetaGrid className="mb-6">
-            <ServiceMetaCard label="Network">
-              <p className="text-sm font-medium text-Heres-white">
-                {getNetworkDisplayLabel()}
-              </p>
-            </ServiceMetaCard>
-            <ServiceMetaCard label="Capsule ID">
-              <AddressPill address={capsule.capsuleAddress} explorer="address" />
-            </ServiceMetaCard>
-            <ServiceMetaCard label="Owner">
-              <AddressPill address={capsule.owner.toBase58()} explorer="address" />
-            </ServiceMetaCard>
-            <ServiceMetaCard label="Program ID">
-              <AddressPill address={getProgramId().toBase58()} explorer="address" />
-            </ServiceMetaCard>
-            <ServiceMetaCard label="Beneficiaries">
-              {privateStateHidden ? (
-                <button
-                  type="button"
-                  onClick={handleReveal}
-                  disabled={revealing}
-                  className="inline-flex items-center gap-1.5 text-sm font-medium text-Heres-accent transition-colors hover:text-Heres-white disabled:opacity-60"
-                  title="Beneficiaries are private inside the TEE. Sign to reveal them."
-                >
-                  <Eye className="h-4 w-4 shrink-0" />
-                  {revealing ? 'Revealing...' : 'Private - reveal'}
+        {actionResult && actionResult.type !== 'progress' && !deleteOpen && (
+          <div className={`hd-toast hd-toast--${actionResult.type}`} role={actionResult.type === 'error' ? 'alert' : 'status'}>
+            {actionResult.type === 'success' ? <HdIcon.Check /> : <HdIcon.Alert />}
+            <p>{actionResult.message}</p>
+            <button type="button" onClick={() => setActionResult(null)} aria-label="Dismiss"><HdIcon.X /></button>
+          </div>
+        )}
+        {actionResult?.type === 'progress' && !deleteOpen && (
+          <div className="hd-toast hd-toast--progress" role="status"><HdIcon.Spinner /><p>{actionResult.message}</p></div>
+        )}
+
+        {/* ---- where things stand ---- */}
+        {isActive && (
+          <section className={`hd-timer${soon ? ' hd-timer--warn' : ''}`} aria-labelledby="hd-timer-h">
+            <div className="hd-timer__top">
+              <div>
+                <p className="hd-kicker">{dateOnly ? 'Scheduled transfer' : 'Transfers if you stay inactive for ' + formatPeriod(capsule.inactivityPeriod)}</p>
+                <h2 id="hd-timer-h">
+                  {dateOnly ? `Transfers on ${longDate(capsule.targetDate!)}` : `Transfers in ${formatRemaining(remaining)}`}
+                </h2>
+                <p className="hd-timer__meta">
+                  {dateOnly
+                    ? `${formatRemaining(remaining)} from now. Wallet activity doesn’t change a fixed date.`
+                    : <>Last active {agoWords(capsule.lastActivity)}. Using your wallet resets the clock automatically{capsule.targetDate != null ? `, or it transfers on ${longDate(capsule.targetDate)} — whichever comes first` : ''}.</>}
+                </p>
+              </div>
+              {canCheckIn && (
+                <button type="button" className="cf-btn cf-btn--light hd-timer__cta" onClick={handleUpdateActivity} disabled={Boolean(actionLoading)}>
+                  {actionLoading === 'checkin' ? <><HdIcon.Spinner /> Checking in…</> : <><HdIcon.Pulse /> Check in now</>}
                 </button>
-              ) : (
-                <p className="text-sm font-medium text-Heres-white">
-                  {capsule.beneficiaries.length > 0
-                    ? `${capsule.beneficiaries.length} beneficiar${capsule.beneficiaries.length === 1 ? 'y' : 'ies'}`
-                    : 'Not set'}
-                </p>
               )}
-            </ServiceMetaCard>
-            <ServiceMetaCard label="Trigger">
-              <p className="text-sm font-medium text-Heres-white">
-                {formatDuration(capsule.inactivityPeriod)} inactivity
-              </p>
-              {targetDateMs != null ? (
-                <p className="mt-0.5 text-xs text-Heres-accent">
-                  or fixed date {new Date(targetDateMs).toLocaleDateString()} (whichever first)
-                </p>
-              ) : (
-                <p className="mt-0.5 text-xs text-Heres-muted">No fixed date</p>
-              )}
-            </ServiceMetaCard>
-          </ServiceMetaGrid>
-
-          <ServiceSection
-            title="Vault Assets"
-            description="Live base-layer balances held by this capsule. Every asset follows the same beneficiary percentage split."
-            className="mb-6"
-          >
-            {vaultAssetsLoading ? (
-              <div className="grid gap-3 sm:grid-cols-2" aria-label="Loading vault assets">
-                <div className="h-20 animate-pulse rounded-xl border border-Heres-border bg-Heres-surface/40" />
-                <div className="h-20 animate-pulse rounded-xl border border-Heres-border bg-Heres-surface/40" />
-              </div>
-            ) : vaultAssetsError ? (
-              <div className="rounded-xl border border-amber-400/30 bg-amber-400/10 p-4">
-                <p className="text-sm text-amber-200">{vaultAssetsError}</p>
-                <Button variant="secondary" size="sm" className="mt-3" onClick={refreshVault}>
-                  Retry vault check
-                </Button>
-              </div>
-            ) : vaultAssetCount === 0 ? (
-              <div className="rounded-xl border border-dashed border-Heres-border bg-Heres-surface/20 p-5 text-sm text-Heres-muted">
-                This vault has no funded assets. Use Add Funds below to deposit SOL or a fungible token.
-              </div>
-            ) : (
-              <div className="grid gap-3 sm:grid-cols-2">
-                {vaultAssets.withdrawableSol > 0 && (
-                  <div className="rounded-xl border border-Heres-border bg-Heres-card/80 p-4">
-                    <div className="flex items-center justify-between gap-3">
-                      <p className="font-medium text-Heres-white">SOL</p>
-                      <span className="rounded-md border border-Heres-border px-2 py-0.5 text-[10px] uppercase tracking-wider text-Heres-muted">
-                        Native
-                      </span>
-                    </div>
-                    <p className="mt-2 font-mono text-lg font-semibold tabular-nums text-Heres-accent">
-                      {formatBaseUnits(BigInt(vaultAssets.withdrawableSol), 9)} SOL
-                    </p>
-                  </div>
-                )}
-                {vaultAssets.tokens.map((token) => {
-                  const mint = token.mint.toBase58()
-                  return (
-                    <div key={mint} className="rounded-xl border border-Heres-border bg-Heres-card/80 p-4">
-                      <div className="flex items-center justify-between gap-3">
-                        <p className="font-mono text-sm font-medium text-Heres-white" title={mint}>
-                          {maskAddress(mint)}
-                        </p>
-                        <span className="rounded-md border border-Heres-border px-2 py-0.5 text-[10px] uppercase tracking-wider text-Heres-muted">
-                          {token.tokenProgram.equals(TOKEN_2022_PROGRAM_ID) ? 'Token-2022' : 'SPL'}
-                        </span>
-                      </div>
-                      <p className="mt-2 font-mono text-lg font-semibold tabular-nums text-Heres-accent">
-                        {formatBaseUnits(token.amount, token.decimals)}
-                      </p>
-                      <div className="mt-2">
-                        <AddressPill address={mint} explorer="address" />
-                      </div>
-                    </div>
-                  )
-                })}
+            </div>
+            {!dateOnly && (
+              <div className="hd-meter" role="img" aria-label={`${Math.round(elapsed * 100)}% of the inactivity period has passed`}>
+                <i style={{ width: `${Math.max(2, elapsed * 100)}%` }} />
               </div>
             )}
-          </ServiceSection>
+          </section>
+        )}
 
-          {/* Privacy & Delegation (PER / TEE) */}
-          <ServiceSection
-            title={
-              <span className="flex flex-wrap items-center gap-3">
-                <span>Privacy &amp; Delegation (PER / TEE)</span>
-                <span className="rounded-lg border border-Heres-accent/50 bg-Heres-accent/10 px-2.5 py-1 text-xs font-medium text-Heres-accent">
-                  PER (TEE) enabled
-                </span>
-              </span>
-            }
-            description="This capsule uses the Private Ephemeral Rollup (PER) with TEE. Delegation and crank scheduling happen automatically at creation. Conditions are monitored confidentially inside the TEE."
-            className="mb-6"
-            tone="accent"
-          >
-            <div className="rounded-xl border border-Heres-border/50 bg-Heres-surface/30 p-4 mb-4">
-              <p className="text-xs font-semibold uppercase tracking-wider text-Heres-accent mb-1">Where is private monitoring?</p>
-              <p className="text-sm text-Heres-muted">
-                Private monitoring runs inside the TEE automatically after capsule creation. Conditions (inactivity, intent) are checked confidentially and are not visible on the public chain. The beneficiary list lives only inside the TEE while delegated; the owner can read it with a one-time auth signature. New capsules seal this list before activation so settlement cannot change after the Switch is armed.
-              </p>
-              {privateStateHidden && (
-                <div className="mt-3">
-                  <Button
-                    variant="secondary"
-                    size="sm"
-                    onClick={handleReveal}
-                    disabled={revealing}
-                    loading={revealing}
-                  >
-                    {revealing ? 'Authorizing TEE...' : 'Reveal private details'}
-                  </Button>
-                  {revealError && <p className="mt-2 text-xs text-red-400">{revealError}</p>}
-                </div>
-              )}
-            </div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-              <div className="rounded-xl border border-Heres-border bg-Heres-card/80 p-4">
-                <p className="text-[10px] font-semibold uppercase tracking-wider text-Heres-muted mb-1">Privacy mode</p>
-                <p className="text-sm font-medium text-Heres-accent">PER (TEE)</p>
-              </div>
-              <div className="rounded-xl border border-Heres-border bg-Heres-card/80 p-4">
-                <p className="text-[10px] font-semibold uppercase tracking-wider text-Heres-muted mb-1">Default validator</p>
-                <p className="text-sm font-medium text-Heres-white">TEE</p>
-              </div>
-              <div className="rounded-xl border border-Heres-border bg-Heres-card/80 p-4">
-                <p className="text-[10px] font-semibold uppercase tracking-wider text-Heres-muted mb-1">Validator address</p>
-                <AddressPill address={MAGICBLOCK_ER.VALIDATOR_TEE} />
-              </div>
-              <div className="rounded-xl border border-Heres-border bg-Heres-card/80 p-4">
-                <p className="text-[10px] font-semibold uppercase tracking-wider text-Heres-muted mb-1">TEE RPC</p>
-                <div className="flex items-center gap-1 min-w-0">
-                  <a
-                    href={PER_TEE.DOCS_URL}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-sm font-mono text-Heres-accent truncate hover:underline"
-                    title="Open TEE / PER docs"
-                  >
-                    {PER_TEE.RPC_URL.replace(/^https:\/\//, '')}
-                  </a>
-                  <CopyButton value={PER_TEE.RPC_URL} />
-                </div>
-                <p className="text-[10px] text-Heres-muted mt-1">RPC is API-only; link opens TEE docs</p>
-              </div>
-            </div>
-          </ServiceSection>
+        {status === 'Draft' && (
+          <section className="hd-info hd-info--warn">
+            <h2>This capsule’s setup didn’t finish</h2>
+            <p>It can’t execute in this state and your assets are safe. Delete it to get everything back in your wallet, then create it again.</p>
+          </section>
+        )}
 
-          <ServiceSection title={isNft ? 'NFT Recipients & Intent' : 'Beneficiaries & Intent'} className="mb-6">
-            <div className="mb-4 flex items-start justify-between gap-3">
-              <p className="text-sm text-Heres-muted">
-                {intentParsed?.intent
-                  || (isNft
-                    ? 'The human intent statement is encrypted off-chain. Each revealed on-chain NFT assignment is shown below.'
-                    : 'The human intent statement is encrypted off-chain and delivered to the beneficiary via CRE. Only the on-chain beneficiary split is shown here.')}
-              </p>
-              {canEditBeneficiaries && (
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  onClick={() => setShowEditBeneficiaries(true)}
-                  className="shrink-0"
-                  title="Edit the beneficiary list (routed privately through the TEE while delegated)."
-                >
-                  <Pencil className="h-4 w-4" aria-hidden />
-                  Edit
-                </Button>
-              )}
-              {capsule.inheritanceSealed && (
-                <span className="shrink-0 rounded-lg border border-Heres-accent/40 px-2.5 py-1 text-xs font-medium text-Heres-accent">
-                  Settlement sealed
-                </span>
+        {capsule.inheritanceSealed && isActive && (
+          <section className="hd-info">
+            <h2>Capsules can’t be edited once created</h2>
+            <p>Recipients, shares and the trigger are locked for security. To change them, delete this capsule and create a new one. Your assets stay protected under these exact terms until you do.</p>
+          </section>
+        )}
+
+        {steps.length > 0 && (
+          <section className="hd-panel" aria-labelledby="hd-settle-h">
+            <div className="hd-panel__h">
+              <h2 id="hd-settle-h">{isExecuted ? 'Settlement' : 'The trigger has been reached'}</h2>
+              {canRefreshAutomation && (
+                <button type="button" className="hd-textbtn" onClick={handleRefreshAutomation} disabled={Boolean(actionLoading)}>
+                  {actionLoading === 'automation' ? <HdIcon.Spinner /> : <HdIcon.Refresh />} Nudge automation
+                </button>
               )}
             </div>
-            {isNft && (capsule.nftAssignments?.length ?? 0) > 0 ? (
-              <div className="space-y-2">
-                {capsule.nftAssignments?.map((assignment, i) => (
-                  <div
-                    key={`${assignment.mint.toBase58()}-${i}`}
-                    className="rounded-lg border border-Heres-border bg-Heres-card/80 px-3 py-3"
-                  >
-                    <div className="grid gap-3 sm:grid-cols-2">
-                      <div className="min-w-0">
-                        <p className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-Heres-muted">NFT mint</p>
-                        <AddressPill address={assignment.mint.toBase58()} explorer="address" />
-                      </div>
-                      <div className="min-w-0">
-                        <p className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-Heres-muted">Recipient</p>
-                        <AddressPill address={assignment.recipient.toBase58()} explorer="address" />
-                      </div>
-                    </div>
+            {isExpired && !isExecuted && (
+              <p className="hd-panel__lead">Execution normally runs on its own. If it hasn’t started, you can run each step yourself.</p>
+            )}
+            {isExecuted && isDelegated && <p className="hd-panel__lead">{capsuleSettlementGuidance(accountLocations)}</p>}
+            <ol className="hd-steps">
+              {steps.map((s, i) => (
+                <li key={s.key} className={`hd-steps__item is-${s.state}`}>
+                  <span className="hd-steps__dot">{s.state === 'done' ? <HdIcon.Check /> : i + 1}</span>
+                  <div className="hd-steps__body">
+                    <h3>{s.title}</h3>
+                    <p>{s.text}</p>
                   </div>
+                  {s.action && s.state === 'current' && (
+                    <button type="button" className="cf-btn cf-btn--light hd-steps__btn" onClick={s.action.run} disabled={!s.action.enabled || s.action.busy}>
+                      {s.action.busy ? <><HdIcon.Spinner /> Working…</> : s.action.label}
+                    </button>
+                  )}
+                </li>
+              ))}
+            </ol>
+            {distributionError && <p className="hd-panel__error">{distributionError}</p>}
+            {intentDispatchResult && <p className={intentDispatchResult.type === 'error' ? 'hd-panel__error' : 'hd-panel__ok'}>{intentDispatchResult.message}</p>}
+          </section>
+        )}
+
+        {/* ---- assets ---- */}
+        <section className="hd-panel" aria-labelledby="hd-assets-h">
+          <div className="hd-panel__h">
+            <h2 id="hd-assets-h">Assets</h2>
+            <div className="hd-panel__tools">
+              {canAddFunds && <button type="button" className="hd-textbtn" onClick={() => setShowAddFunds(true)} disabled={Boolean(actionLoading)}><HdIcon.Plus /> Add funds</button>}
+              {canRecover && <button type="button" className="hd-textbtn" onClick={() => setShowWithdraw(true)} disabled={Boolean(actionLoading)}>Withdraw</button>}
+            </div>
+          </div>
+          {vaultAssetsLoading ? (
+            <div className="hd-rows"><div className="hd-sk hd-sk--line" /><div className="hd-sk hd-sk--line" /></div>
+          ) : vaultAssetsError ? (
+            <div className="hd-inline-alert" role="alert">
+              <p>{vaultAssetsError}</p>
+              <button type="button" className="hd-textbtn" onClick={refreshVault}><HdIcon.Refresh /> Try again</button>
+            </div>
+          ) : funded.length === 0 ? (
+            <p className="hd-panel__empty">
+              {isExecuted ? 'The vault is empty — its assets have been transferred.' : 'There’s nothing in this capsule’s vault yet.'}
+            </p>
+          ) : (
+            <>
+              <ul className="hd-rows">
+                {funded.map((a) => (
+                  <li key={a.key} className="hd-asset">
+                    <i style={{ background: a.color }} aria-hidden />
+                    <span className="hd-asset__name">
+                      <strong>{a.displaySymbol}</strong>
+                      <small title={a.mint ?? undefined}>{a.mint ? (a.name === 'Unknown token' ? maskAddr(a.mint, 4, 4) : a.name) : 'Solana'}</small>
+                    </span>
+                    <span className="hd-asset__amt">
+                      <strong>{fmtAmount(a.balanceUi)} {a.displaySymbol.length <= 8 ? a.displaySymbol : ''}</strong>
+                      <small>{a.usdPrice != null && a.balanceUi != null ? `≈ ${fmtUsd(a.balanceUi * a.usdPrice)}` : '—'}</small>
+                    </span>
+                  </li>
                 ))}
+              </ul>
+              <div className="hd-total">
+                <span>Total value{isDevnet && totalUsd != null && <span className="cf-tag" title="Devnet balances priced at mainnet rates, for reference only">Indicative</span>}</span>
+                <strong>{totalUsd != null ? fmtUsd(totalUsd) : '—'}</strong>
               </div>
-            ) : !isNft && capsule.beneficiaries.length > 0 ? (
-              <div className="space-y-2">
-                {capsule.beneficiaries.map((b, i) => (
-                  <div
-                    key={`${b.pubkey.toBase58()}-${i}`}
-                    className="flex items-center justify-between gap-3 rounded-lg border border-Heres-border bg-Heres-card/80 px-3 py-2"
-                  >
-                    <AddressPill address={b.pubkey.toBase58()} explorer="address" />
-                    <span className="text-sm font-semibold text-Heres-accent tabular-nums shrink-0">
+            </>
+          )}
+        </section>
+
+        {/* ---- recipients ---- */}
+        <section className="hd-panel" aria-labelledby="hd-people-h">
+          <div className="hd-panel__h">
+            <h2 id="hd-people-h">
+              {isNft ? 'NFT recipients' : 'Beneficiaries'}
+              {!isNft && <span className="hd-panel__aside"> — same split across all assets</span>}
+            </h2>
+            {canEditBeneficiaries && (
+              <button type="button" className="hd-textbtn" onClick={() => setShowEditBeneficiaries(true)}><HdIcon.Pencil /> Edit</button>
+            )}
+          </div>
+          {privateStateHidden ? (
+            <div className="hd-private">
+              <span className="hd-private__icon"><HdIcon.Lock /></span>
+              <div>
+                <h3>Recipients are kept private</h3>
+                <p>They’re sealed inside a secure enclave until the capsule executes. You can view them by signing a message with your wallet — nothing is sent on-chain.</p>
+                {revealError && <p className="hd-panel__error">{revealError}</p>}
+              </div>
+              <button type="button" className="cf-btn cf-btn--pill" onClick={handleReveal} disabled={revealing}>
+                {revealing ? <><HdIcon.Spinner /> Waiting for wallet…</> : <><HdIcon.Eye /> View recipients</>}
+              </button>
+            </div>
+          ) : isNft && (capsule.nftAssignments?.length ?? 0) > 0 ? (
+            <ul className="hd-rows">
+              {capsule.nftAssignments!.map((a, i) => {
+                const r = a.recipient.toBase58()
+                return (
+                  <li key={`${a.mint.toBase58()}-${i}`} className="hd-person">
+                    <span className="cf-avatar" style={{ background: RECIPIENT_COLORS[i % RECIPIENT_COLORS.length] }} aria-hidden>{(nameOf(r)[0] || 'N').toUpperCase()}</span>
+                    <span className="hd-person__name">
+                      <strong>{nameOf(r) || 'Recipient'}</strong>
+                      <Addr value={r} />
+                    </span>
+                    <span className="hd-person__share" title={a.mint.toBase58()}>NFT {maskAddr(a.mint.toBase58(), 4, 4)}</span>
+                  </li>
+                )
+              })}
+            </ul>
+          ) : capsule.beneficiaries.length > 0 ? (
+            <ul className="hd-rows">
+              {capsule.beneficiaries.map((b, i) => {
+                const addr = b.pubkey.toBase58()
+                return (
+                  <li key={`${addr}-${i}`} className="hd-person">
+                    <span className="cf-avatar" style={{ background: RECIPIENT_COLORS[i % RECIPIENT_COLORS.length] }} aria-hidden>{(nameOf(addr)[0] || 'N').toUpperCase()}</span>
+                    <span className="hd-person__name">
+                      <strong>{nameOf(addr) || `Recipient ${i + 1}`}</strong>
+                      <Addr value={addr} />
+                    </span>
+                    <span className="hd-person__share">
+                      {funded.length === 1 && (
+                        <span className="hd-person__amount">{fmtAmount((funded[0].balanceUi ?? 0) * b.shareBps / 10000)} {funded[0].displaySymbol} · </span>
+                      )}
                       {(b.shareBps / 100).toFixed(b.shareBps % 100 === 0 ? 0 : 2)}%
                     </span>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <p className="text-sm text-Heres-muted">
-                {privateStateHidden
-                  ? 'Private inheritance details remain hidden in the TEE.'
-                  : isNft
-                    ? 'No NFT assignments set on-chain yet.'
-                    : 'No beneficiaries set on-chain yet.'}
-              </p>
-            )}
-          </ServiceSection>
-
-          {isIntentEnabled && (
-            <ServiceSection
-              title="Intent Statement Delivery"
-              description="Off-chain encrypted Intent Statement package delivery powered by CRE orchestration."
-              className="mb-6"
-              tone="accent"
-            >
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                <div className="rounded-xl border border-Heres-border bg-Heres-card/80 p-4">
-                  <p className="text-[10px] font-semibold uppercase tracking-wider text-Heres-muted mb-1">Channel</p>
-                  <p className="text-sm text-Heres-white">
-                    {(intentConfig?.deliveryChannel || 'email').toUpperCase()}
-                  </p>
-                </div>
-                <div className="rounded-xl border border-Heres-border bg-Heres-card/80 p-4">
-                  <p className="text-[10px] font-semibold uppercase tracking-wider text-Heres-muted mb-1">Recipient Commitment</p>
-                  <p className="text-sm text-Heres-white font-mono">
-                    {intentConfig?.recipientEmailHash
-                      ? `${intentConfig.recipientEmailHash.slice(0, 16)}...`
-                      : intentConfig?.recipientEmail
-                        ? 'legacy-email-onchain'
-                      : '-'}
-                  </p>
-                </div>
-                <div className="rounded-xl border border-Heres-border bg-Heres-card/80 p-4">
-                  <p className="text-[10px] font-semibold uppercase tracking-wider text-Heres-muted mb-1">Delivery Status</p>
-                  {intentDeliveryLoading ? (
-                    <p className="text-sm text-Heres-muted">Loading...</p>
-                  ) : !wallet.connected ? (
-                    <p className="text-sm text-Heres-muted">Connect wallet</p>
-                  ) : !isOwner ? (
-                    <p className="text-sm text-Heres-muted">Owner auth required</p>
-                  ) : (
-                    <p className="text-sm text-Heres-accent">{intentDeliveryStatus?.status || 'pending'}</p>
-                  )}
-                </div>
-              </div>
-              {intentDeliveryStatus?.lastError && (
-                <p className="text-xs text-amber-400 mt-3">{normalizeTxError(intentDeliveryStatus.lastError)}</p>
-              )}
-              {intentDeliveryError && (
-                <p className="text-xs text-red-400 mt-3">{intentDeliveryError}</p>
-              )}
-            </ServiceSection>
+                  </li>
+                )
+              })}
+            </ul>
+          ) : (
+            <p className="hd-panel__empty">No recipients are set on-chain for this capsule.</p>
           )}
+        </section>
 
-          {/* Actions - status-based flow */}
-          {isOwner && (() => {
-            const isExecuted = status === 'Executed' || (!capsule.isActive && capsule.executedAt)
-            const isExpired = status === 'Expired'
-            const isActive = status === 'Active'
-            const isIntentDelivered =
-              intentDeliveryStatus?.status === 'delivered' || intentDeliveryStatus?.status === 'dispatched'
-            const isDistributed = Boolean(isExecuted && distributionComplete)
-            const canExecute = isExpired && !isExecuted
-            const canUndelegate = Boolean(
-              isDelegated && !accountLocationsLoading && !accountLocationsError
-            )
-            const canDistribute = Boolean(
-              isExecuted &&
-              accountsOnBase &&
-              !isDistributed &&
-              !accountLocationsLoading &&
-              !accountLocationsError &&
-              !distributionLoading &&
-              !distributionError
-            )
-            const canDispatchCre = Boolean(isExecuted && isDistributed && isIntentEnabled && !isIntentDelivered)
-            const settlementReady = Boolean(isExecuted && isDistributed && (!isIntentEnabled || isIntentDelivered))
-            const canFinalize = Boolean(settlementReady && !isDelegated)
-            const canRefreshAutomation = Boolean((isExpired || isActive) && !isExecuted)
-            // Owner early-exit (pre-fire only). Recover works even while delegated; full cancel needs
-            // the accounts undelegated to base first, so it is gated on !isDelegated. Withdraw also
-            // requires the vault to actually hold something - the button no longer lingers on an
-            // emptied vault.
-            const preFire = isCapsulePreFire(capsule.executedAt)
-            const canRecover = Boolean(
-              preFire &&
-              vaultAssets.hasWithdrawable &&
-              !vaultAssetsLoading &&
-              !vaultAssetsError
-            )
-            const canCancel = Boolean(
-              preFire &&
-              accountsOnBase &&
-              !accountLocationsLoading &&
-              !accountLocationsError &&
-              !vaultAssetsLoading &&
-              !vaultAssetsError
-            )
-            // Deposit works regardless of delegation state: the program reads the capsule as a raw
-            // AccountInfo (like recover_vault), so it no longer reverts 3007 while the Switch is
-            // delegated to the ER. Both deposit and withdraw work while delegated.
-            const canAddFunds = preFire && isToken
-
-            const finalizeStep = isIntentEnabled ? 4 : 3
-            const steps = [
-              { num: 1, label: 'Execute Intent', desc: 'Deactivate capsule when inactivity condition met' },
-              { num: 2, label: 'Distribute Assets', desc: `Transfer ${assetConfig.symbol}/tokens to beneficiaries` },
-              ...(isIntentEnabled ? [{ num: 3, label: 'Deliver Intent Statement', desc: 'Dispatch encrypted intent via CRE' }] : []),
-              { num: finalizeStep, label: 'Finalize Capsule', desc: 'Close settled accounts and complete this lifecycle' },
-            ]
-
-            // Determine current step (1-based)
-            const currentStep = !isExecuted
-              ? (canExecute ? 1 : 0)
-              : !isDistributed
-                ? 2
-                : isIntentEnabled && !isIntentDelivered
-                  ? 3
-                  : finalizeStep
-
-            return (
-              <ServiceSection title="Actions" className="mb-6" tone="warning">
-                {/* Status guidance */}
-                <div className="rounded-lg border border-Heres-border/50 bg-Heres-surface/30 p-3 mb-5">
-                  {isActive && (
-                    <p className="text-sm text-Heres-muted">
-                      Capsule is <span className="text-Heres-accent font-medium">Active</span>. {targetDateMs != null ? 'Neither the inactivity period nor the fixed fire date has been reached yet.' : 'The inactivity period has not elapsed yet.'} <strong>Check In</strong> any time to reset the inactivity timer. Execute and Distribute unlock once it expires; you can <strong>Add Funds</strong> or <strong>Withdraw Funds</strong> any time, or <strong>Cancel Capsule</strong> after undelegating from the ER.
-                    </p>
-                  )}
-                  {status === 'Draft' && (
-                    <p className="text-sm text-amber-400">
-                      Capsule setup did not finish arming. Its assets are safe and it cannot execute. Undelegate any remaining private accounts, then cancel this draft and create it again.
-                    </p>
-                  )}
-                  {canExecute && (
-                    <p className="text-sm text-amber-400">
-                      {targetDateMs != null ? 'A trigger condition has been met' : 'Inactivity period has elapsed'}. You can now <strong>Execute Intent</strong> to deactivate the capsule, then distribute assets.
-                    </p>
-                  )}
-                  {isExpired && !isExecuted && (
-                    <p className="mt-2 text-sm text-blue-400">
-                      If external automation missed this capsule, use <strong>Refresh Automation</strong> to re-register it for the crank without creating a new capsule.
-                    </p>
-                  )}
-                  {isExecuted && isDelegated && (
-                    <p className="text-sm text-blue-400">
-                      {capsuleSettlementGuidance(accountLocations)}
-                    </p>
-                  )}
-                  {!isExecuted && isDelegated && partiallyUndelegated && (
-                    <p className="mt-2 text-sm text-blue-400">
-                      {capsuleSettlementGuidance(accountLocations)}
-                    </p>
-                  )}
-                  {accountLocationsError && (
-                    <p className="text-sm text-amber-300">
-                      {accountLocationsError} Base-layer actions remain locked until this check succeeds.
-                    </p>
-                  )}
-                  {accountLocationsLoading && (
-                    <p className="text-sm text-Heres-muted">
-                      Checking the capsule switch and private beneficiary state before enabling actions...
-                    </p>
-                  )}
-                  {distributionError && (
-                    <p className="text-sm text-amber-300">
-                      {distributionError}
-                    </p>
-                  )}
-                  {vaultAssetsError && (
-                    <p className="text-sm text-amber-300">
-                      {vaultAssetsError}
-                    </p>
-                  )}
-                  {isDistributed && isIntentEnabled && !isIntentDelivered && (
-                    <p className="text-sm text-Heres-accent">
-                      Assets already reached the beneficiary. Proceed to <strong>Deliver Intent Statement</strong> via CRE.
-                    </p>
-                  )}
-                  {isExecuted && !isDistributed && accountsOnBase && !accountLocationsError && (
-                    <p className="text-sm text-Heres-accent">
-                      Capsule executed. Proceed to <strong>Distribute Assets</strong>{isIntentEnabled ? ' and then dispatch Intent Statement delivery via CRE.' : '.'}
-                    </p>
-                  )}
-                  {settlementReady && (
-                    <p className="text-sm text-green-400">
-                      {isIntentEnabled
-                        ? 'Assets are distributed and the intent statement is delivered. Finalize the capsule to close its on-chain accounts.'
-                        : 'Assets are distributed. Finalize the capsule to close its on-chain accounts.'}
-                    </p>
-                  )}
-                </div>
-
-                {/* Step indicator */}
-                <div className="flex items-center gap-2 mb-5 overflow-x-auto">
-                  {steps.map((step, i) => {
-                    const done = step.num < currentStep
-                    const active = step.num === currentStep
-                    return (
-                      <div key={step.num} className="flex items-center gap-2">
-                        {i > 0 && <div className={`w-8 h-px ${done ? 'bg-green-500' : 'bg-Heres-border'}`} />}
-                        <div className="flex items-center gap-2 shrink-0">
-                          <div className={`flex items-center justify-center w-6 h-6 rounded-full text-xs font-bold ${
-                            done ? 'bg-green-500/20 text-green-400 border border-green-500/40' :
-                            active ? 'bg-Heres-accent/20 text-Heres-accent border border-Heres-accent/40' :
-                            'bg-Heres-surface/50 text-Heres-muted border border-Heres-border'
-                          }`}>
-                            {done ? <Check className="h-3.5 w-3.5" strokeWidth={3} /> : step.num}
-                          </div>
-                          <div>
-                            <p className={`text-xs font-medium ${done ? 'text-green-400' : active ? 'text-Heres-white' : 'text-Heres-muted'}`}>
-                              {step.label}
-                            </p>
-                            <p className="text-[10px] text-Heres-muted hidden sm:block">{step.desc}</p>
-                          </div>
-                        </div>
-                      </div>
-                    )
-                  })}
-                </div>
-
-                {/* Action buttons */}
-                <div className="flex flex-wrap gap-3">
-                  <Button
-                    variant="primary"
-                    size="sm"
-                    onClick={handleExecuteIntent}
-                    disabled={!canExecute || !!actionLoading}
-                    loading={actionLoading === 'execute'}
-                    title={!canExecute ? (isActive ? (targetDateMs != null ? 'No trigger condition met yet' : 'Inactivity period not elapsed') : isExecuted ? 'Already executed' : 'Not available') : 'Execute intent on-chain'}
-                  >
-                    {isExecuted ? 'Executed' : 'Execute Intent'}
-                  </Button>
-                  <Button
-                    variant="secondary"
-                    size="sm"
-                    onClick={handleDistributeAssets}
-                    disabled={!canDistribute || !!actionLoading}
-                    loading={actionLoading === 'distribute'}
-                    title={
-                      isDistributed
-                        ? 'The capsule vault is already distributed'
-                        : !isExecuted
-                          ? 'Execute intent first'
-                          : isDelegated
-                            ? partiallyUndelegated
-                              ? 'Finish undelegation first'
-                              : 'Undelegate from ER first'
-                            : accountLocationsLoading || accountLocationsError || distributionLoading || distributionError
-                              ? 'Waiting for the capsule state check'
-                              : `Distribute ${assetConfig.symbol}/tokens to beneficiaries`
-                    }
-                  >
-                    {isDistributed ? 'Assets Distributed' : 'Distribute Assets'}
-                  </Button>
-                  <Button
-                    variant="secondary"
-                    size="sm"
-                    onClick={handleRefreshAutomation}
-                    disabled={!canRefreshAutomation || !!actionLoading}
-                    loading={actionLoading === 'automation'}
-                    title={!canRefreshAutomation ? 'Only pending capsules can be re-registered for automation' : 'Re-register this capsule for external crank discovery'}
-                  >
-                    Refresh Automation
-                  </Button>
-                  <Button
-                    variant="danger"
-                    size="sm"
-                    onClick={() => setConfirmUndelegate(true)}
-                    disabled={!canUndelegate || !!actionLoading}
-                    loading={actionLoading === 'undelegate'}
-                    title={
-                      accountLocationsLoading || accountLocationsError
-                        ? 'Waiting for the capsule account check'
-                        : !canUndelegate
-                          ? 'No delegated capsule state was found'
-                          : capsuleSettlementGuidance(accountLocations)
-                    }
-                  >
-                    {partiallyUndelegated ? 'Finish Undelegation' : 'Undelegate from ER'}
-                  </Button>
-                  {isIntentEnabled && (
-                    <Button
-                      variant="secondary"
-                      size="sm"
-                      onClick={handleIntentDispatch}
-                      disabled={!canDispatchCre || intentDispatchLoading || !!actionLoading}
-                      loading={intentDispatchLoading}
-                      title={!canDispatchCre ? 'Execute intent first' : 'Dispatch encrypted intent statement via CRE'}
-                    >
-                      Deliver Intent Statement
-                    </Button>
-                  )}
-                  <Button
-                    variant="danger"
-                    size="sm"
-                    onClick={() => setConfirmFinalize(true)}
-                    disabled={!canFinalize || !!actionLoading || intentDispatchLoading}
-                    loading={actionLoading === 'finalize'}
-                    title={!canFinalize ? 'Distribute every asset and complete intent delivery first' : 'Close the settled capsule accounts permanently'}
-                  >
-                    Finalize Capsule
-                  </Button>
-                  {/* Owner liveness: prove you are alive to slide the inactivity deadline forward. */}
-                  {canCheckIn && (
-                    <Button
-                      variant="primary"
-                      size="sm"
-                      onClick={handleUpdateActivity}
-                      disabled={!!actionLoading}
-                      loading={actionLoading === 'checkin'}
-                      title="Prove liveness now - resets the inactivity timer so the capsule does not fire."
-                    >
-                      <HeartPulse className="h-4 w-4" aria-hidden />
-                      Check In
-                    </Button>
-                  )}
-                  {/* Owner early-exit (pre-fire): add funds, withdraw funds, or fully cancel + close. */}
-                  {preFire && isToken && (
-                    <Button
-                      variant="secondary"
-                      size="sm"
-                      onClick={() => setShowAddFunds(true)}
-                      disabled={!canAddFunds || !!actionLoading}
-                      title="Deposit more into this capsule's vault (deposits are repeatable)."
-                    >
-                      <Plus className="h-4 w-4" aria-hidden />
-                      Add Funds
-                    </Button>
-                  )}
-                  {preFire && (
-                    <>
-                      <Button
-                        variant="danger"
-                        size="sm"
-                        onClick={() => setShowWithdraw(true)}
-                        disabled={!canRecover || !!actionLoading}
-                        title={
-                          canRecover
-                            ? 'Withdraw funds from the capsule back to your wallet. The capsule remains open.'
-                            : vaultAssetsLoading || vaultAssetsError
-                              ? 'Waiting for the vault balance check'
-                              : 'No funds to withdraw'
-                        }
-                      >
-                        Withdraw Funds
-                      </Button>
-                      <Button
-                        variant="danger"
-                        size="sm"
-                        onClick={() => setConfirmCancel(true)}
-                        disabled={!canCancel || !!actionLoading}
-                        loading={actionLoading === 'cancel'}
-                        title={
-                          accountLocationsLoading || accountLocationsError
-                            ? 'Waiting for the capsule account check'
-                            : vaultAssetsLoading || vaultAssetsError
-                              ? 'Waiting for the vault balance check'
-                              : !canCancel
-                                ? 'Settle both capsule accounts on Solana before cancelling'
-                                : 'Refund all funds + account rent and permanently close the capsule'
-                        }
-                      >
-                        Cancel Capsule
-                      </Button>
-                    </>
-                  )}
-                </div>
-
-                {/* Result messages */}
-                {actionResult && (
-                  <div className={`mt-4 rounded-lg border p-3 text-sm break-all ${
-                    actionResult.type === 'success'
-                      ? 'border-green-500/30 bg-green-500/10 text-green-400'
-                      : actionResult.type === 'progress'
-                        ? 'border-blue-500/30 bg-blue-500/10 text-blue-300'
-                        : 'border-red-500/30 bg-red-500/10 text-red-400'
-                  }`}>
-                    {actionResult.message}
-                  </div>
-                )}
-                {intentDispatchResult && (
-                  <div className={`mt-3 rounded-lg border p-3 text-sm break-all ${
-                    intentDispatchResult.type === 'success'
-                      ? 'border-blue-500/30 bg-blue-500/10 text-blue-400'
-                      : 'border-red-500/30 bg-red-500/10 text-red-400'
-                  }`}>
-                    {intentDispatchResult.message}
-                  </div>
-                )}
-              </ServiceSection>
-            )
-          })()}
-
-          {!isMultiAssetVault && (
-            <ServiceSection
-              title={isToken ? `${assetConfig.symbol} Price (USD)` : `NFT Value (${assetConfig.symbol} / USD proxy)`}
-              className="mb-6"
-            >
-            <div className="flex flex-wrap items-center justify-between gap-4 mb-4">
-              <div>
-                <p className="text-sm text-Heres-muted mt-1">
-                  {isToken
-                    ? `Real-time ${assetConfig.symbol} price (CoinGecko).`
-                    : `Representative value trend (${assetConfig.symbol}/USD) for reference.`}
-                </p>
-              </div>
-              <div className="flex items-center gap-3 flex-shrink-0">
-                {isToken && (
-                  <div className="rounded-lg border border-Heres-border/80 bg-Heres-card/80 px-2.5 py-1.5 flex items-center gap-2">
-                    <span className="text-[10px] font-medium uppercase tracking-wider text-Heres-muted">1 {assetConfig.symbol}</span>
-                    <span className="text-sm font-semibold tabular-nums text-Heres-accent">${displayedSolPrice.toFixed(2)}</span>
-                    <span className="text-[10px] text-Heres-muted">USD</span>
-                  </div>
-                )}
-                <div className="flex items-center gap-1">
-                  {CHART_RANGES.map((r) => (
-                    <button
-                      key={r.key}
-                      type="button"
-                      onClick={() => setChartRange(r.key)}
-                      className={`rounded-lg border px-2.5 py-1.5 text-xs font-medium transition-colors ${chartRange === r.key
-                        ? 'border-Heres-accent bg-Heres-accent/20 text-Heres-accent'
-                        : 'border-Heres-border bg-Heres-card/80 text-Heres-muted hover:border-Heres-accent/40 hover:text-Heres-accent'
-                        }`}
-                    >
-                      {r.label}
-                    </button>
-                  ))}
-                </div>
-              </div>
+        {/* ---- trigger & note ---- */}
+        <section className="hd-panel" aria-labelledby="hd-trigger-h">
+          <div className="hd-panel__h"><h2 id="hd-trigger-h">Trigger &amp; note</h2></div>
+          <dl className="hd-kv">
+            <div>
+              <dt>Trigger</dt>
+              <dd>
+                {dateOnly
+                  ? `On ${longDate(capsule.targetDate!)}`
+                  : `After ${formatPeriod(capsule.inactivityPeriod)} of wallet inactivity${capsule.targetDate != null ? `, or on ${longDate(capsule.targetDate)}` : ''}`}
+              </dd>
             </div>
-            {chartLoading ? (
-              <div className="relative h-64 flex items-center justify-center text-Heres-muted">
-                <RefreshCw className="h-8 w-8 animate-spin" />
-              </div>
-            ) : chartData.length > 0 ? (
-              <div className="relative h-64 w-full">
-                <ResponsiveContainer width="100%" height="100%">
-                  <AreaChart data={chartData} margin={{ top: 8, right: 8, left: 8, bottom: 8 }}>
-                    <defs>
-                      <linearGradient id="chartGradient" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="0%" stopColor="var(--Heres-accent)" stopOpacity={0.3} />
-                        <stop offset="100%" stopColor="var(--Heres-accent)" stopOpacity={0} />
-                      </linearGradient>
-                    </defs>
-                    <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" />
-                    <XAxis dataKey="time" tick={{ fontSize: 10 }} stroke="rgba(255,255,255,0.3)" />
-                    <YAxis domain={['auto', 'auto']} tick={{ fontSize: 10 }} stroke="rgba(255,255,255,0.3)" tickFormatter={(v) => `$${v}`} />
-                    <Tooltip
-                      contentStyle={{ backgroundColor: 'var(--Heres-card)', border: '1px solid var(--Heres-border)' }}
-                      labelStyle={{ color: 'var(--Heres-white)' }}
-                      formatter={(value) => [value != null && !Array.isArray(value) ? '$' + Number(value).toFixed(2) : '$0.00', 'USD']}
-                    />
-                    <Area
-                      type="monotone"
-                      dataKey="usd"
-                      stroke="var(--Heres-accent)"
-                      strokeWidth={2}
-                      fill="url(#chartGradient)"
-                    />
-                  </AreaChart>
-                </ResponsiveContainer>
-              </div>
-            ) : (
-              <div className="h-64 flex items-center justify-center text-Heres-muted text-sm">
-                Chart data unavailable
+            {!isActive && <div><dt>Last active</dt><dd>{agoWords(capsule.lastActivity)}</dd></div>}
+            <div>
+              <dt>Note</dt>
+              <dd>{hasNote ? `Sealed — delivered to ${labels?.representative ? `your representative (${labels.representative})` : 'your representative'} after execution` : 'None attached'}</dd>
+            </div>
+            {hasNote && isExecuted && (
+              <div>
+                <dt>Delivery</dt>
+                <dd>
+                  {intentDeliveryLoading ? 'Checking…' : !isOwner ? 'Owner only' : intentDeliveryStatus?.status ? intentDeliveryStatus.status[0].toUpperCase() + intentDeliveryStatus.status.slice(1) : 'Pending'}
+                </dd>
               </div>
             )}
-            </ServiceSection>
-          )}
+          </dl>
+          {intentParsed?.intent && <p className="hd-quote">{intentParsed.intent}</p>}
+          {intentDeliveryStatus?.lastError && <p className="hd-panel__error">{normalizeTxError(intentDeliveryStatus.lastError)}</p>}
+          {intentDeliveryError && <p className="hd-panel__error">{intentDeliveryError}</p>}
+        </section>
 
-        </div>
-      </main>
-    </div>
+        {/* ---- technical ---- */}
+        <details className="hd-tech">
+          <summary><HdIcon.Chevron /> Technical details</summary>
+          <dl className="hd-kv">
+            <div><dt>Network</dt><dd>{getNetworkDisplayLabel()}</dd></div>
+            <div><dt>Capsule</dt><dd><Addr value={capsule.capsuleAddress} /></dd></div>
+            <div><dt>Owner</dt><dd><Addr value={capsule.owner.toBase58()} /></dd></div>
+            <div><dt>Program</dt><dd><Addr value={getProgramId().toBase58()} /></dd></div>
+            <div><dt>Privacy</dt><dd>Private Ephemeral Rollup (TEE){isDelegated ? ' · running privately' : ' · settled on Solana'}</dd></div>
+            <div><dt>Settlement</dt><dd>{capsule.inheritanceSealed ? 'Sealed' : 'Editable (legacy)'}</dd></div>
+            <div><dt>TEE docs</dt><dd><a className="hd-link" href={PER_TEE.DOCS_URL} target="_blank" rel="noopener noreferrer">How private monitoring works <HdIcon.External /></a></dd></div>
+          </dl>
+        </details>
+      </div>
+    </CreateShell>
   )
 }

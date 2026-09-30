@@ -30,6 +30,9 @@ export function Providers({ children }: { children: ReactNode }) {
         loginMethods: ['email'],
         appearance: {
           walletChainType: 'solana-only',
+          // Matches the capsule builder: dark panel with the Heres red for the primary action.
+          theme: '#221C26',
+          accentColor: '#C8131A',
         },
         embeddedWallets: {
           // Auto-create a Solana embedded wallet for every user on login.
