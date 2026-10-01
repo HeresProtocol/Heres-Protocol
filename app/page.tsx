@@ -5,11 +5,13 @@ import { PrivyLoginButton } from '@/components/PrivyLoginButton'
 import { HorizontalSteps } from '@/components/landing/HorizontalSteps'
 import { HomeLogoLink } from '@/components/landing/HomeLogoLink'
 import { LandingRouteWarmup } from '@/components/landing/LandingRouteWarmup'
+import { LegacyCard } from '@/components/landing/LegacyCard'
+import { getHeroStats } from '@/lib/landing-stats'
 import { ThreadRibbon } from '@/components/landing/ThreadRibbon'
 import '@/components/landing/landing-v2.css'
 
 export const metadata: Metadata = {
-  title: 'Heres — Leave something that lives on',
+  title: { absolute: 'Heres — Leave something that lives on' },
   description: 'Set Your Intents, who gets it and when. Non-custodial digital inheritance and asset continuity on Solana.',
   openGraph: {
     title: 'Heres — Leave something that lives on',
@@ -73,7 +75,11 @@ const audiences = [
   },
 ]
 
-export default function HomePage() {
+// Re-render the static page every 5 minutes so the protocol totals baked into it stay current.
+export const revalidate = 300
+
+export default async function HomePage() {
+  const heroStats = await getHeroStats()
   return (
     <div className="hr-site" id="top">
       <LandingRouteWarmup />
@@ -81,7 +87,7 @@ export default function HomePage() {
       <header className="hr-header">
         <div className="hr-shell hr-header-inner">
           <HomeLogoLink className="hr-brand">
-            <Image src="/figma/logo.png" alt="Heres" width={32} height={32} priority unoptimized />
+            <Image src="/figma/logo.png" alt="Heres" width={32} height={32} priority />
           </HomeLogoLink>
 
           <nav className="hr-nav" aria-label="Primary navigation">
@@ -113,12 +119,11 @@ export default function HomePage() {
         {/* HERO SECTION */}
         <section className="hr-hero" aria-labelledby="hr-hero-title">
           <div className="hr-hero-bg-wrap">
-            <Image
+            <Image sizes="(max-width: 1512px) 100vw, 1512px"
               src="/figma/hero-wide-bg.png"
               alt="Parents lifting child in meadow with continuous thread"
               fill
               priority
-              unoptimized
               className="hr-hero-bg-img"
             />
           </div>
@@ -140,16 +145,8 @@ export default function HomePage() {
 
               <p className="hr-hero-best-work">Get the best work.</p>
 
-              <div className="hr-hero-legacy-card" aria-label="Your Legacy onchain and protected">
-                <Image
-                  src="/figma/cards/legacy-card.png"
-                  alt="Your Legacy — Onchain & Protected"
-                  width={240}
-                  height={285}
-                  priority
-                  unoptimized
-                  className="hr-legacy-card-img"
-                />
+              <div className="hr-hero-legacy-card">
+                <LegacyCard initialProtocol={heroStats} />
               </div>
             </div>
           </div>
@@ -157,23 +154,19 @@ export default function HomePage() {
 
         {/* HERO TO MISSION TRANSITION: SILHOUETTE & CONTINUOUS RED RIBBON */}
         <div className="hr-hero-transition" aria-hidden="true">
-          <Image
+          <Image sizes="100vw"
             src="/figma/threads/thread-hero-figures.png"
             alt=""
             width={1512}
             height={330}
-            priority
-            unoptimized
             className="hr-hero-trans-figures"
           />
           <ThreadRibbon name="heroTransition" className="hr-thread-img" />
-          <Image
+          <Image sizes="100vw"
             src="/figma/threads/thread-hero-ground.png"
             alt=""
             width={1512}
             height={330}
-            priority
-            unoptimized
             className="hr-thread-ground hr-thread-ground-top"
           />
         </div>
@@ -198,13 +191,11 @@ export default function HomePage() {
             </div>
 
             <div className="hr-mission-visual">
-              <Image
+              <Image sizes="(max-width: 860px) 100vw, 708px"
                 src="/figma/mission/mission-collage-ribbon.png"
                 alt="Friends leaping pasture fence, hand reaching to cat, and family preparing food with interwoven continuous red ribbon and protected badge"
                 width={708}
                 height={637}
-                priority
-                unoptimized
                 className="hr-mission-composite-img"
               />
             </div>
@@ -219,8 +210,6 @@ export default function HomePage() {
               alt="Father smiling as he carries his child comfortably on his shoulders"
               fill
               sizes="100vw"
-              priority={false}
-              unoptimized
             />
           </div>
           <div className="hr-shell hr-continuity-content">
@@ -237,23 +226,19 @@ export default function HomePage() {
 
         {/* SILHOUETTES & CONTINUOUS RIBBON BRIDGE */}
         <div className="hr-steps-ribbon-bar" aria-hidden="true">
-          <Image
+          <Image sizes="100vw"
             src="/figma/threads/thread-steps-figures.png"
             alt=""
             width={1512}
             height={368}
-            priority
-            unoptimized
             className="hr-steps-bridge-figures"
           />
           <ThreadRibbon name="stepsBridge" className="hr-steps-bridge-img" />
-          <Image
+          <Image sizes="100vw"
             src="/figma/threads/thread-steps-ground.png"
             alt=""
             width={1512}
             height={368}
-            priority
-            unoptimized
             className="hr-thread-ground"
           />
         </div>
@@ -266,7 +251,7 @@ export default function HomePage() {
             </div>
             <span className="hr-eyebrow">BUILT ON SOLANA</span>
             <h2 id="hr-security-title">
-              Your intention shouldn&apos;t depend on anyone&apos;s discretion , including ours.
+              Your intention shouldn&apos;t depend on anyone&apos;s discretion, including ours.
             </h2>
             <p className="hr-security-subhead">
               Built on infrastructure you can verify.
@@ -281,8 +266,6 @@ export default function HomePage() {
                       alt={p.name}
                       width={74}
                       height={74}
-                      priority
-                      unoptimized
                     />
                   </div>
                   <span>{p.name}</span>
@@ -291,7 +274,7 @@ export default function HomePage() {
             </div>
 
             <p className="hr-infra-caption">
-              Heres Protocol, sets this up to run automatically on the solana blockchain infrastructure.
+              Heres Protocol sets this up to run automatically on Solana blockchain infrastructure.
             </p>
 
             <div className="hr-feature-grid">
@@ -308,16 +291,13 @@ export default function HomePage() {
                   <span>Transparent</span>
                 </h3>
                 <p>
-                  The protocol is open source. Anyone can inspect how it behaves on{' '}
-                  <a href="https://github.com/HeresProtocol/Heres-Protocol" target="_blank" rel="noopener noreferrer">
-                    GitHub
-                  </a>.
+                  Your selected assets, recipients, and execution conditions are shown for review before you create a capsule.
                 </p>
               </div>
               <div className="hr-feature-card">
                 <h3>
                   <span className="hr-red-halo-dot" />
-                  <span>Audited</span>
+                  <span>Tested</span>
                 </h3>
                 <p>Core custody, settlement, delegation, and wallet paths are covered by automated tests and Devnet verification.</p>
               </div>
@@ -360,8 +340,6 @@ export default function HomePage() {
                           alt={p.name}
                           width={126}
                           height={126}
-                          priority
-                          unoptimized
                         />
                       </div>
                       <span>{p.label}</span>
@@ -378,8 +356,6 @@ export default function HomePage() {
               alt=""
               width={372}
               height={463}
-              priority
-              unoptimized
               className="hr-privacy-visual-img"
             />
           </div>
@@ -433,13 +409,11 @@ export default function HomePage() {
 
             <div className="hr-close-visual">
               <div className="hr-close-photo-wrap">
-                <Image
+                <Image sizes="(max-width: 860px) 100vw, 552px"
                   src="/figma/close-beach-walk.png"
                   alt="Family walking together away across a natural open horizon"
                   width={552}
                   height={725}
-                  priority
-                  unoptimized
                 />
               </div>
             </div>
@@ -467,7 +441,6 @@ export default function HomePage() {
               alt=""
               width={132}
               height={211}
-              unoptimized
             />
           </div>
         </section>
@@ -478,7 +451,7 @@ export default function HomePage() {
         <div className="hr-shell hr-footer-top">
           <div className="hr-footer-brand-col">
             <HomeLogoLink>
-              <Image src="/figma/logo.png" alt="Heres" width={40} height={40} className="hr-footer-logo" unoptimized />
+              <Image src="/figma/logo.png" alt="Heres" width={40} height={40} className="hr-footer-logo" />
             </HomeLogoLink>
             <div className="hr-social-links">
               <a href="https://t.me/heresprotocol" target="_blank" rel="noopener noreferrer" aria-label="Telegram">
@@ -494,7 +467,7 @@ export default function HomePage() {
                 <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20.45 20.45h-3.56v-5.57c0-1.33-.02-3.04-1.85-3.04-1.85 0-2.14 1.45-2.14 2.94v5.67H9.34V9h3.42v1.56h.05c.48-.9 1.64-1.85 3.37-1.85 3.6 0 4.27 2.37 4.27 5.46v6.28zM5.34 7.43a2.06 2.06 0 1 1 0-4.13 2.06 2.06 0 0 1 0 4.13zM7.12 20.45H3.56V9h3.56v11.45zM22.22 0H1.77C.79 0 0 .77 0 1.73v20.54C0 23.23.79 24 1.77 24h20.45c.98 0 1.78-.77 1.78-1.73V1.73C24 .77 23.2 0 22.22 0z"/></svg>
               </a>
             </div>
-            <a href="mailto:contact@heresprotocol.com" className="hr-custodians-link">
+            <a href="https://t.me/heresprotocol" target="_blank" rel="noopener noreferrer" className="hr-custodians-link">
               For custodians and institutions <span aria-hidden="true">→</span>
             </a>
           </div>
@@ -514,7 +487,7 @@ export default function HomePage() {
             <h4>Company</h4>
             <ul>
               <li><a href="https://doc.heresprotocol.com/welcome/readme" target="_blank" rel="noopener noreferrer">About</a></li>
-              <li><a href="mailto:contact@heresprotocol.com">Contact</a></li>
+              <li><a href="https://t.me/heresprotocol" target="_blank" rel="noopener noreferrer">Contact</a></li>
             </ul>
           </div>
 
@@ -522,8 +495,8 @@ export default function HomePage() {
             <h4>Resources</h4>
             <ul>
               <li><a href="https://doc.heresprotocol.com" target="_blank" rel="noopener noreferrer">Documentation</a></li>
-              <li><a href="https://doc.heresprotocol.com" target="_blank" rel="noopener noreferrer">Blog / Insights</a></li>
-              <li><a href="https://doc.heresprotocol.com" target="_blank" rel="noopener noreferrer">Audit Reports</a></li>
+              <li><a href="https://doc.heresprotocol.com/concepts/fees-limits-statuses" target="_blank" rel="noopener noreferrer">Fees &amp; limits</a></li>
+              <li><a href="https://doc.heresprotocol.com/user-guide/manage-a-capsule" target="_blank" rel="noopener noreferrer">Managing a capsule</a></li>
             </ul>
           </div>
 
@@ -535,17 +508,15 @@ export default function HomePage() {
               <li><a href="#security">Security</a></li>
               <li><a href="#privacy">Privacy</a></li>
               <li><a href="https://doc.heresprotocol.com" target="_blank" rel="noopener noreferrer">Docs</a></li>
-              <li><a href="https://doc.heresprotocol.com" target="_blank" rel="noopener noreferrer">Legal</a></li>
               <li><a href="https://doc.heresprotocol.com/user-guide/create-a-capsule" target="_blank" rel="noopener noreferrer">Tutorials</a></li>
             </ul>
           </div>
 
           <div className="hr-footer-col">
-            <h4>Legal</h4>
+            <h4>Trust</h4>
             <ul>
-              <li><a href="https://doc.heresprotocol.com" target="_blank" rel="noopener noreferrer">Terms</a></li>
-              <li><a href="#privacy">Privacy</a></li>
-              <li><a href="#security">Risk Disclosure</a></li>
+              <li><a href="https://doc.heresprotocol.com/concepts/privacy-and-security" target="_blank" rel="noopener noreferrer">Privacy &amp; security</a></li>
+              <li><a href="https://doc.heresprotocol.com/getting-started/supported-networks-and-assets" target="_blank" rel="noopener noreferrer">Networks &amp; assets</a></li>
             </ul>
             <div className="hr-footer-trio" aria-hidden="true">
               <Image
@@ -553,7 +524,6 @@ export default function HomePage() {
                 alt=""
                 width={115}
                 height={139}
-                unoptimized
               />
             </div>
           </div>

@@ -28,7 +28,7 @@ No. Beneficiaries have absolutely no control over the capsule and cannot modify 
 
 ### What is the Capsule rule?
 
-* You can only create 3 capsule per wallet.
+* A wallet can have one active capsule at a time, and there is no limit on how many capsules it creates over time: once a capsule is cancelled or finalized, the wallet can create a new one.
 * The Create page redirects you to My Capsule while lifecycle accounts from an existing capsule still remain.
 * While a capsule is active, the owner can refresh activity, add or withdraw funds, undelegate, or cancel it. New capsules do not allow beneficiary or NFT-assignment edits after the inheritance configuration is sealed during setup.
 * Distribution and cancellation require the capsule switch and beneficiary data to be settled back on Solana first.

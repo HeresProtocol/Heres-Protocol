@@ -1,3 +1,5 @@
+import Image from 'next/image'
+
 // Photo + hand-drawn ribbon for /pricing, traced 1:1 from the reference mockup.
 // The ribbon lives in the photo's own coordinate space (2400x1322), so it stays
 // wrapped around the woman and her bag at every screen size.
@@ -12,13 +14,14 @@ export default function PricingBackdrop() {
   return (
     <div className="hr-pricing-bg-layer" aria-hidden="true">
       <div className="hr-pricing-stage">
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img
+        {/* The stage is the photo's "cover" box: at least the viewport width, or 2400/1322 x its height. */}
+        <Image
           className="hr-pricing-bg-img"
           src="/figma/pricing/pricing-hero-bg.jpg"
           alt=""
-          decoding="async"
-          fetchPriority="high"
+          fill
+          priority
+          sizes="max(100vw, 182vh)"
         />
         <svg
           className="hr-pricing-ribbon"

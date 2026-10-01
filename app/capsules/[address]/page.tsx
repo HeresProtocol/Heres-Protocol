@@ -686,7 +686,8 @@ export default function CapsuleDetailPage() {
   }
 
   const explorer = (value: string) => getExplorerUrl('address', value)
-  const Addr = ({ value }: { value: string }) => (
+  // Plain render helper (not a component), so React doesn't remount it on every render.
+  const renderAddr = (value: string) => (
     <span className="hd-addr">
       <code title={value}>{maskAddr(value, 6, 6)}</code>
       <button type="button" onClick={() => copy(value)} aria-label="Copy address">{copied === value ? <HdIcon.Check /> : <HdIcon.Copy />}</button>
@@ -959,7 +960,7 @@ export default function CapsuleDetailPage() {
                     <span className="cf-avatar" style={{ background: RECIPIENT_COLORS[i % RECIPIENT_COLORS.length] }} aria-hidden>{(nameOf(r)[0] || 'N').toUpperCase()}</span>
                     <span className="hd-person__name">
                       <strong>{nameOf(r) || 'Recipient'}</strong>
-                      <Addr value={r} />
+                      {renderAddr(r)}
                     </span>
                     <span className="hd-person__share" title={a.mint.toBase58()}>NFT {maskAddr(a.mint.toBase58(), 4, 4)}</span>
                   </li>
@@ -975,7 +976,7 @@ export default function CapsuleDetailPage() {
                     <span className="cf-avatar" style={{ background: RECIPIENT_COLORS[i % RECIPIENT_COLORS.length] }} aria-hidden>{(nameOf(addr)[0] || 'N').toUpperCase()}</span>
                     <span className="hd-person__name">
                       <strong>{nameOf(addr) || `Recipient ${i + 1}`}</strong>
-                      <Addr value={addr} />
+                      {renderAddr(addr)}
                     </span>
                     <span className="hd-person__share">
                       {funded.length === 1 && (
@@ -1028,9 +1029,9 @@ export default function CapsuleDetailPage() {
           <summary><HdIcon.Chevron /> Technical details</summary>
           <dl className="hd-kv">
             <div><dt>Network</dt><dd>{getNetworkDisplayLabel()}</dd></div>
-            <div><dt>Capsule</dt><dd><Addr value={capsule.capsuleAddress} /></dd></div>
-            <div><dt>Owner</dt><dd><Addr value={capsule.owner.toBase58()} /></dd></div>
-            <div><dt>Program</dt><dd><Addr value={getProgramId().toBase58()} /></dd></div>
+            <div><dt>Capsule</dt><dd>{renderAddr(capsule.capsuleAddress)}</dd></div>
+            <div><dt>Owner</dt><dd>{renderAddr(capsule.owner.toBase58())}</dd></div>
+            <div><dt>Program</dt><dd>{renderAddr(getProgramId().toBase58())}</dd></div>
             <div><dt>Privacy</dt><dd>Private Ephemeral Rollup (TEE){isDelegated ? ' · running privately' : ' · settled on Solana'}</dd></div>
             <div><dt>Settlement</dt><dd>{capsule.inheritanceSealed ? 'Sealed' : 'Editable (legacy)'}</dd></div>
             <div><dt>TEE docs</dt><dd><a className="hd-link" href={PER_TEE.DOCS_URL} target="_blank" rel="noopener noreferrer">How private monitoring works <HdIcon.External /></a></dd></div>

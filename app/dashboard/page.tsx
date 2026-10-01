@@ -306,7 +306,7 @@ export default function DashboardPage() {
         </article>
 
         {vault.isError && <p className="hd-note hd-note--warn" role="alert">Vault balances couldn’t be loaded. Refresh to try again. Your capsule itself is fine.</p>}
-        <p className="hd-note">One capsule per wallet. To set up a different plan, delete this one first — your assets return to your wallet.</p>
+        <p className="hd-note">One active capsule per wallet at a time. To set up a different plan, delete this one first — your assets return to your wallet — then create as many new ones as you like.</p>
       </>
     )
   }

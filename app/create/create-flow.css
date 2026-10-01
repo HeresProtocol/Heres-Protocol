@@ -53,15 +53,21 @@
 .cf-logo {
   position: absolute;
   z-index: 3;
-  left: max(16px, calc(50% - 659 * var(--u)));
-  top: calc(28 * var(--u));
-  width: clamp(48px, calc(52 * var(--u)), 60px);
-  height: clamp(48px, calc(52 * var(--u)), 60px);
+  /* same left edge as the landing header (.hr-shell: page gutter, 1356px container) */
+  left: max(clamp(20px, 5.15vw, 78px), calc((100% - 1356px) / 2));
+  /* same size and vertical centre as the landing header logo (48px badge, 96px header) */
+  top: 24px;
+  width: 48px;
+  height: 48px;
+  padding: 6px;
   display: block;
   transition: transform var(--cf-base) var(--cf-ease);
 }
 .cf-logo:hover { transform: scale(1.03); }
 .cf-logo img { width: 100%; height: 100%; object-fit: contain; display: block; transform-origin: center; animation: cf-logo-turn 8.8s ease-in-out infinite; }
+/* Trigger & Note, Review and the success screen: continuous spin, same as the Pricing logo. */
+.cf-logo.cf-logo--spin img { animation: cf-logo-spin 8s linear infinite; }
+@keyframes cf-logo-spin { to { transform: rotate(-360deg); } }
 @keyframes cf-logo-turn {
   0%, 68% { transform: rotate(0deg) scale(1); }
   73% { transform: rotate(-4deg) scale(0.95); }
@@ -608,7 +614,7 @@
 .cf-row:last-child { border-bottom: 0; }
 .cf-row__main {
   display: grid;
-  grid-template-columns: calc(34 * var(--u)) calc(118 * var(--u)) minmax(0, 1fr) calc(86 * var(--u)) calc(4 * var(--u)) calc(151 * var(--u)) calc(16 * var(--u));
+  grid-template-columns: calc(34 * var(--u)) calc(118 * var(--u)) minmax(0, 1fr) calc(112 * var(--u)) calc(4 * var(--u)) calc(151 * var(--u)) calc(16 * var(--u));
   align-items: center;
   gap: calc(10 * var(--u));
 }
@@ -619,6 +625,13 @@
 .cf-row .cf-input--name { font-size: max(15px, calc(16 * var(--u))); }
 .cf-row .cf-input--addr { font-size: max(12px, calc(12.5 * var(--u))); text-overflow: ellipsis; }
 .cf-affix { position: relative; display: block; }
+.cf-sel-item:has(.cf-selected-amount) { grid-template-columns:calc(30 * var(--u)) minmax(0,1fr) calc(18 * var(--u)); }
+.cf-sel-item:has(.cf-selected-amount)>.cf-x { grid-column:3; grid-row:1; }
+.cf-selected-amount { min-width:0; width:100%; grid-column:1/-1; grid-row:2; }
+.cf-selected-amount>span { font-size:11px; color:var(--cf-muted); display:block; margin-bottom:4px; }
+.cf-selected-amount .cf-input { width:100%; font-size:14px; text-align:right; height:40px; }
+.cf-share-note { color:var(--cf-muted); font-size:13px; line-height:1.5; margin:0 0 16px; max-width:70ch; }
+.cf-affix--unit > span { max-width: 42%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .cf-affix span { position: absolute; right: calc(9 * var(--u)); top: 50%; transform: translateY(-50%); font-size: max(9px, calc(9.5 * var(--u))); color: #8d8c91; pointer-events: none; }
 .cf-affix:not(.cf-affix--unit) .cf-input { font-size: max(14px, calc(15 * var(--u))); padding: 0 calc(20 * var(--u)) 0 calc(10 * var(--u)); font-variant-numeric: tabular-nums; }
 .cf-affix--unit .cf-input { font-size: max(12.5px, calc(13 * var(--u))); text-align: center; padding: 0 calc(38 * var(--u)) 0 calc(20 * var(--u)); font-variant-numeric: tabular-nums; }
@@ -790,14 +803,17 @@
 /* =================== TABLET / PHONE =================== */
 @media (max-width: 1040px) {
   .cf-page { --u: 1px; }
-  .cf-stage, .cf-stage--success { width: auto; max-width: 994px; margin: 0 20px; }
+  .cf-stage, .cf-stage--success { width: auto; max-width: 994px; margin: 0 clamp(20px, 5.15vw, 78px); }
 }
 
 @media (max-width: 760px) {
   .cf-ribbons { display: none; }
-  .cf-logo { position: relative; left: 0; top: 0; margin: 16px 16px 12px; width: 48px; height: 48px; }
-  .cf-stage, .cf-stage--success { margin: 0 12px; padding: 0 0 24px; }
-  .cf-page .cf-card { min-height: 0; padding: 0 18px 20px; border-radius: 22px; }
+  /* Same 20px gutter as the landing page; padding (not margin) on .cf-page so nothing
+     collapses through to the dark body and shows a strip above the page. */
+  .cf-page { padding-top: 26px; }
+  .cf-logo { position: relative; left: 0; top: 0; margin: 0 20px 12px; width: 44px; height: 44px; padding: 6px; }
+  .cf-stage, .cf-stage--success { margin: 0 20px; padding: 0 0 24px; }
+  .cf-page .cf-card { min-height: 0; padding: 0 16px 20px; border-radius: 22px; }
   .cf-page .cf-card.cf-card--success { padding: 36px 18px; min-height: 0; }
   .cf-steps { height: 64px; justify-content: space-between; }
   .cf-steps__item { flex: 1; }
@@ -819,7 +835,7 @@
   .cf-recipients__tools { width: 100%; margin-left: 0; }
   .cf-recipients__tools .cf-btn--pill { flex: 1; padding: 0 10px; }
   .cf-row { padding: 14px 12px 12px; }
-  .cf-page .cf-row__main { grid-template-columns: 34px minmax(0, 1fr) 8px minmax(0, 1fr) 22px; grid-template-areas: 'av name name name x' '. addr addr addr addr' '. pct eq amt amt'; row-gap: 8px; column-gap: 8px; }
+  .cf-page .cf-row__main { grid-template-columns: 34px minmax(0, 1.25fr) 8px minmax(0, 1fr) 22px; grid-template-areas: 'av name name name x' '. addr addr addr addr' '. pct eq amt amt'; row-gap: 8px; column-gap: 8px; }
   .cf-row__main > :nth-child(1) { grid-area: av; }
   .cf-row__main > :nth-child(2) { grid-area: name; }
   .cf-row__main > :nth-child(3) { grid-area: addr; }
@@ -846,7 +862,7 @@
   .cf-page *, .cf-page *::before, .cf-page *::after { animation-duration: 1ms !important; animation-delay: 0ms !important; animation-iteration-count: 1 !important; transition-duration: 1ms !important; }
   .cf-ribbons path { stroke-dashoffset: 0; opacity: 1; animation: none; }
   .cf-ribbons__drift { animation: none; }
-  .cf-logo img { animation: none; }
+  .cf-logo img, .cf-logo.cf-logo--spin img { animation: none; }
 }
 
 /* inline loading placeholder for balances */

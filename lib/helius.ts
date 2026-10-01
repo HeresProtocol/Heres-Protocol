@@ -34,7 +34,7 @@ function getHeliusApiKey(): string | null {
   return isValidHeliusApiKey(key) ? key.trim() : null
 }
 
-function getHeliusRpcUrl(): string | null {
+export function getHeliusRpcUrl(): string | null {
   const key = getHeliusApiKey()
   return key ? getDefaultHeliusRpcUrl(SOLANA_CONFIG.NETWORK, key) : null
 }
