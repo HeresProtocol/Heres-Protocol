@@ -1,18 +1,18 @@
 ---
-description: The New Standard for Trustless Asset Protection and Inheritance
+description: The New Standard for Trustless Asset Protection and Succession
 ---
 
 # Welcome to Heres
 
-One of the greatest innovations of the blockchain and crypto ecosystem is absolute **self-custody**. Individuals can fully own and control their assets without permission from banks or centralized authorities.&#x20;
+One of the greatest innovations of the blockchain and crypto ecosystem is absolute **self-custody**. Individuals can fully own and control their assets without permission from banks or centralized authorities.
 
-However, this powerful security creates a fatal paradox: if you lose your private keys or unexpectedly lose access to your wallet, your assets are frozen on the network forever.&#x20;
+However, this powerful security creates a fatal paradox: if you lose your private keys or unexpectedly lose access to your wallet, your assets are frozen on the network forever.
 
 Traditional financial systems solve this through centralized intermediaries, but relying on them undermines the core reason we joined the decentralized ecosystem.
 
-**Heres Protocol** is a trustless 'dead-man's switch' designed to solve this dilemma.&#x20;
+**Heres Protocol** is a trustless 'dead-man's switch' designed to solve this dilemma.
 
-We have built an infrastructure that safely transfers your assets to designated beneficiaries in the event of your absence, without ever handing custody to a third party.&#x20;
+We have built an infrastructure that safely transfers your assets to designated beneficiaries in the event of your absence, without ever handing custody to a third party.
 
 Every step is executed deterministically by 100% on-chain smart contracts without corporate intervention, while keeping your beneficiary information and distribution conditions encrypted in complete privacy.
 
