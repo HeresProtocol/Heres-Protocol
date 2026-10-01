@@ -7,7 +7,7 @@ import { usePrivy } from '@privy-io/react-auth'
 import { useWallet as useSolanaWallet } from '@solana/wallet-adapter-react'
 import { useCreateCapsuleForm, type InactivityUnit } from '@/hooks/useCreateCapsuleForm'
 import { useSolBalance } from '@/hooks/queries/useSolBalance'
-import { MAX_CAPSULE_MODIFICATIONS, PLATFORM_FEE } from '@/constants'
+import { PLATFORM_FEE } from '@/constants'
 import { MAX_BENEFICIARIES, MAX_INACTIVITY_DAYS, MAX_NFT_ASSIGNMENTS } from '@/lib/schemas'
 import { formatBaseUnits, parseDecimalToBaseUnits } from '@/lib/fungible-assets'
 import { isValidEmail } from '@/utils/validation'
@@ -16,7 +16,8 @@ import { CreateShell, Stepper } from '@/components/create/CreateShell'
 import { CREATE_RIBBONS } from '@/components/create/ribbons'
 import { StepConnect } from '@/components/create/StepConnect'
 import { StepAssets, type AssetTab } from '@/components/create/StepAssets'
-import { StepBeneficiaries, StepNftRecipients, pctOf, recipientIssues, totalBps, type ShareUnit } from '@/components/create/StepBeneficiaries'
+import { StepBeneficiaries, StepNftRecipients, pctOf, recipientIssues, tooSmallShares, totalScaled, type ShareUnit } from '@/components/create/StepBeneficiaries'
+import { FULL_PCT, displayPct, pctToScaled, relativeShareBps, scaledToNumber, scaledToPct, unitsForPct } from '@/lib/recipient-amount'
 import { StepTrigger, PRESETS, longDate, periodLabel, type TriggerMode, type TriggerPreset } from '@/components/create/StepTrigger'
 import { StepReview, type ReviewLine, type ReviewRecipient } from '@/components/create/StepReview'
 import { CreateSuccess, type CreateSuccessDetails } from '@/components/create/CreateSuccess'
@@ -150,7 +151,10 @@ export default function CreatePage() {
   }
   const assetsOk = isNft
     ? form.selectedNftMints.length > 0
-    : selectedAssets.length > 0 && selectedAssets.every((a) => a.amount > 0)
+    : selectedAssets.length > 0 && selectedAssets.every((a) => {
+      const units = parseDecimalToBaseUnits(a.amountStr, a.decimals)
+      return units != null && units > 0n && a.balanceBaseUnits != null && units <= a.balanceBaseUnits
+    })
 
   /* ---------- step 2: beneficiaries ---------- */
   const rows = form.beneficiaries
@@ -161,9 +165,11 @@ export default function CreatePage() {
     unit === 'all' && totalUsd != null ? 'all' : selectedAssets.some((a) => a.key === unit) ? unit : totalUsd != null ? 'all' : selectedAssets[0]?.key ?? 'all'
   const pcts = rows.map((r) => pctOf(r.amount))
   const rowIssues = recipientIssues(rows.map((r, i) => ({ address: r.address, pct: pcts[i] })), address)
-  const allocBps = totalBps(rows)
-  const activeIdx = rows.map((r, i) => (r.address.trim() && pcts[i] > 0 ? i : -1)).filter((i) => i >= 0)
-  const tokenPeopleOk = allocBps > 0 && allocBps <= 10000 && rowIssues.every((x) => !x) && activeIdx.length > 0 && activeIdx.length <= MAX_BENEFICIARIES
+  // Exact allocated share (scaled; FULL_PCT = 100%). Not rounded, so small token amounts survive.
+  const allocScaled = totalScaled(rows)
+  const activeIdx = rows.map((r, i) => (r.address.trim() && pctToScaled(r.amount) > 0n ? i : -1)).filter((i) => i >= 0)
+  const tinyShares = tooSmallShares(rows.map((r) => r.amount), activeIdx)
+  const tokenPeopleOk = allocScaled > 0n && allocScaled <= FULL_PCT && tinyShares.size === 0 && rowIssues.every((x) => !x) && activeIdx.length > 0 && activeIdx.length <= MAX_BENEFICIARIES
 
   const nftIssues = recipientIssues(form.nftRecipients.map((r) => ({ address: r.address, pct: 1 })), address)
   const nftPeopleOk =
@@ -177,9 +183,9 @@ export default function CreatePage() {
 
   const remainderToLast = () => {
     const last = rows.length - 1
-    const others = rows.reduce((s, r, i) => (i === last ? s : s + Math.round(pctOf(r.amount) * 100)), 0)
-    const rest = Math.max(0, 10000 - others)
-    form.setBeneficiaryShares(rows.map((r, i) => (i === last ? String(rest / 100) : r.amount)))
+    const others = rows.reduce((s, r, i) => (i === last ? s : s + pctToScaled(r.amount)), 0n)
+    const rest = others >= FULL_PCT ? 0n : FULL_PCT - others
+    form.setBeneficiaryShares(rows.map((r, i) => (i === last ? scaledToPct(rest) : r.amount)))
   }
 
   /* ---------- step 3: trigger & note ---------- */
@@ -207,22 +213,17 @@ export default function CreatePage() {
   /* ---------- step 4: what actually goes into the capsule ---------- */
   const plan = useMemo(() => {
     if (isNft) return null
-    const bps = Math.min(allocBps, 10000)
+    // Each asset deposits exactly (protected amount x allocated %), in base units.
     const deposits = selectedAssets.map((a) => {
       const units = parseDecimalToBaseUnits(a.amountStr, a.decimals) ?? 0n
-      const dep = bps > 0 ? (units * BigInt(bps)) / 10000n : 0n
+      const dep = unitsForPct(units, allocScaled)
       return { asset: a, dep, str: formatBaseUnits(dep, a.decimals) }
     })
-    // Recipients' shares of the deposit: their % of the allocated total, summing to exactly 100%.
-    const active = activeIdx.map((i) => ({ i, bps: Math.round(pcts[i] * 100) }))
-    let used = 0
-    const shares = active.map((r, k) => {
-      const s = k === active.length - 1 ? 10000 - used : Math.floor((r.bps * 10000) / Math.max(bps, 1))
-      used += s
-      return { ...r, shareBps: s }
-    })
+    // Recipients' split of that deposit (on-chain share_bps), summing to exactly 10000.
+    const bps = relativeShareBps(activeIdx.map((i) => pctToScaled(rows[i].amount)))
+    const shares = activeIdx.map((i, k) => ({ i, shareBps: bps[k] }))
     return { deposits, shares }
-  }, [isNft, allocBps, selectedAssets, activeIdx, pcts])
+  }, [isNft, allocScaled, selectedAssets, activeIdx, rows])
 
   const lines: ReviewLine[] = isNft
     ? form.selectedNftMints.map((mint, i) => {
@@ -240,10 +241,10 @@ export default function CreatePage() {
         .map((r, i) => ({ r, i, count: form.selectedNftMints.filter((m) => (form.nftAssignments[m] ?? 0) === i).length }))
         .filter((x) => x.count > 0)
         .map(({ r, i, count }) => ({ name: nftNames[i] ?? '', address: r.address, detail: `${count} NFT${count === 1 ? '' : 's'}` }))
-    : activeIdx.map((i) => ({ name: names[rows[i].id] ?? '', address: rows[i].address, detail: `${Number(pcts[i].toFixed(2))}%` }))
+    // Each person's part of what goes into the capsule (the on-chain split), e.g. "100%" for one recipient.
+    : activeIdx.map((i, k) => ({ name: names[rows[i].id] ?? '', address: rows[i].address, detail: `${displayPct((plan?.shares[k]?.shareBps ?? 0) / 100)}%` }))
 
   const blocker = (() => {
-    if (form.modifyCount >= MAX_CAPSULE_MODIFICATIONS) return `This wallet has reached its limit of ${MAX_CAPSULE_MODIFICATIONS} capsule creations.`
     if (!form.wallet.signMessage) return 'This wallet can’t sign messages, which is needed to seal your note. Try another wallet.'
     const tooSmall = plan?.deposits.find((d) => d.dep <= 0n)
     if (tooSmall) return `Your ${tooSmall.asset.displaySymbol} share is too small to lock. Increase the allocation or remove it.`
@@ -312,7 +313,7 @@ export default function CreatePage() {
           ? `${fmtAmount(single.amount)} ${single.symbol}`
           : `${lines.length} assets`
     return (
-      <CreateShell ribbons={CREATE_RIBBONS} success>
+      <CreateShell ribbons={CREATE_RIBBONS} success spinLogo>
         <CreateSuccess
           capsuleId={`#HR-${form.createdCapsuleAddress.slice(-4).toUpperCase()}`}
           capsuleAddress={form.createdCapsuleAddress}
@@ -382,7 +383,7 @@ export default function CreatePage() {
   })()
 
   return (
-    <CreateShell ribbons={CREATE_RIBBONS}>
+    <CreateShell ribbons={CREATE_RIBBONS} spinLogo={step >= 2}>
       <div className={`cf-card cf-card--step${step}`}>
         <Stepper current={form.connected ? step : 0} />
         <div className={`cf-swap cf-swap--${dir}`} key={status ? 'status' : !form.connected ? 'connect' : `step-${step}`}>
@@ -404,6 +405,7 @@ export default function CreatePage() {
             solPrice={solPrice}
             selectedKeys={form.selectedAssetKeys}
             selectedAmounts={form.assetAmounts}
+            onAmount={form.setAssetAmount}
             onToggleAsset={toggleAsset}
             tokensLoading={form.tokensLoading}
             tokensError={form.tokensError}
@@ -492,7 +494,7 @@ export default function CreatePage() {
             lines={lines}
             totalUsd={reviewUsd}
             recipients={recipients}
-            unallocatedPct={isNft ? 0 : Math.max(0, 100 - allocBps / 100)}
+            unallocatedPct={isNft ? 0 : Math.max(0, 100 - scaledToNumber(allocScaled))}
             triggerShort={triggerShort}
             triggerLong={triggerLong}
             intent={form.intent}

@@ -2,7 +2,7 @@
 
 import { StepHead } from './CreateShell'
 import { RECIPIENT_COLORS } from './useAssetCatalog'
-import { IconLock, IconPencil, IconSpinner, fmtAmount, fmtUsd, maskAddr, trimNum } from './ui'
+import { IconLock, IconPencil, IconSpinner, fmtAmount, fmtUsd, maskAddr } from './ui'
 
 export type ReviewLine = { key: string; color: string; symbol: string; name: string; amount: number | null; usd: number | null }
 export type ReviewRecipient = { name: string; address: string; detail: string }
@@ -77,7 +77,7 @@ export function StepReview(props: {
               </div>
             )}
             {props.unallocatedPct > 0 && (
-              <p className="cf-rnote">{trimNum(props.unallocatedPct, 2)}% of each asset was left unallocated, so it stays in your wallet. Amounts above are what goes into the capsule.</p>
+              <p className="cf-rnote">Only the amounts above go into the capsule. The rest of each asset stays in your wallet.</p>
             )}
           </section>
 

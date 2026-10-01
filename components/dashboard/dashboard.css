@@ -4,8 +4,8 @@
    tokens from .cf-page). Measured from the dashboard mockups.
    ===================================================================== */
 
-.hd-card { padding: calc(60 * var(--u)) calc(47 * var(--u)) calc(44 * var(--u)); }
-.hd-card--detail { padding: calc(34 * var(--u)) calc(60 * var(--u)) calc(48 * var(--u)); }
+.hd-card { padding: calc(60 * var(--u)) calc(66 * var(--u)) calc(44 * var(--u)); }
+.hd-card--detail { padding: calc(34 * var(--u)) calc(66 * var(--u)) calc(48 * var(--u)); }
 .hd-body { display: flex; flex-direction: column; flex: 1; animation: cf-swap-fwd var(--cf-slow) var(--cf-ease) both; }
 
 /* ---------------- header ---------------- */
@@ -336,7 +336,7 @@
 
 /* =================== PHONES =================== */
 @media (max-width: 760px) {
-  .hd-card, .hd-card--detail { padding: 22px 18px 22px !important; }
+  .hd-card, .hd-card--detail { padding: 22px 16px 22px !important; }
   .hd-head { flex-direction: column; gap: 14px; }
   .hd-head__actions { justify-content: flex-start; }
   .hd-banner { flex-wrap: wrap; }

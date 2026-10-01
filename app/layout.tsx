@@ -12,6 +12,8 @@ const notoSansKR = Noto_Sans_KR({
   weight: ['400', '500', '700'],
   variable: '--font-sans',
   display: 'swap',
+  // Used only by app chrome/admin, not the landing first paint: load on use instead of preloading on every page.
+  preload: false,
 })
 
 const oswald = Oswald({
@@ -19,6 +21,8 @@ const oswald = Oswald({
   weight: ['500', '700'],
   variable: '--font-display',
   display: 'swap',
+  // Used only by app chrome/admin, not the landing first paint: load on use instead of preloading on every page.
+  preload: false,
 })
 
 // Marketing landing typefaces (Design 04 "Elevated"): editorial serif + grotesk.
@@ -28,6 +32,8 @@ const newsreader = Newsreader({
   weight: ['300', '400', '500'],
   variable: '--font-serif',
   display: 'swap',
+  // Used only by app chrome/admin, not the landing first paint: load on use instead of preloading on every page.
+  preload: false,
 })
 
 const hankenGrotesk = Hanken_Grotesk({
@@ -47,18 +53,16 @@ export const viewport: Viewport = {
 }
 
 export const metadata: Metadata = {
-  title: 'Heresprotocol - Privacy-Preserving Death Insurance Protocol on Solana',
-  description:
-    'A privacy-preserving capsule protocol on Solana. Assets stay delegated, conditions stay private inside Magicblock ER, execution happens automatically when silence becomes truth. Powered by Helius & Phantom.',
+  title: { default: 'Heres Protocol', template: '%s — Heres Protocol' },
+  description: 'Set your intents: who gets it and when. Non-custodial digital inheritance and asset continuity on Solana.',
   manifest: '/manifest.json',
   icons: {
     icon: [{ url: '/logo-white-icon.png', type: 'image/png' }],
   },
   openGraph: {
-    title: 'Heresprotocol - Privacy-Preserving Death Insurance Protocol on Solana',
-    description:
-      'A privacy-preserving capsule protocol on Solana. Assets stay delegated, conditions stay private inside Magicblock ER, execution happens automatically when silence becomes truth. Powered by Helius & Phantom.',
-    siteName: 'Heresprotocol',
+    title: 'Heres Protocol',
+    description: 'Set your intents: who gets it and when. Non-custodial digital inheritance and asset continuity on Solana.',
+    siteName: 'Heres Protocol',
     url: 'https://heresprotocol.com',
     type: 'website',
   },
@@ -79,13 +83,13 @@ export default function RootLayout({
               {
                 '@context': 'https://schema.org',
                 '@type': 'WebSite',
-                name: 'Heresprotocol',
+                name: 'Heres Protocol',
                 url: 'https://heresprotocol.com',
               },
               {
                 '@context': 'https://schema.org',
                 '@type': 'Organization',
-                name: 'Heresprotocol',
+                name: 'Heres Protocol',
                 url: 'https://heresprotocol.com',
                 logo: 'https://heresprotocol.com/logo-white-icon.png',
               },

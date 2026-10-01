@@ -8,7 +8,7 @@ import PricingBackdrop from '@/components/landing/PricingBackdrop'
 import '@/components/landing/landing-v2.css'
 
 export const metadata: Metadata = {
-  title: 'Pricing — Heres Protocol',
+  title: 'Pricing',
   description: 'One capsule. $2 to create. $2/month while your capsule is active. Non-custodial digital inheritance and asset continuity on Solana.',
   openGraph: {
     title: 'Pricing — Heres Protocol',
@@ -24,7 +24,7 @@ export default function PricingPage() {
       <header className="hr-header">
         <div className="hr-shell hr-header-inner">
           <HomeLogoLink className="hr-brand">
-            <Image src="/figma/logo.png" alt="Heres" width={32} height={32} priority unoptimized />
+            <Image src="/figma/logo.png" alt="Heres" width={32} height={32} priority />
           </HomeLogoLink>
 
           <nav className="hr-nav" aria-label="Primary navigation">

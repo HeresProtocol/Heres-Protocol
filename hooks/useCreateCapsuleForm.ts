@@ -19,7 +19,6 @@ import {
   DEFAULT_VALUES,
   STORAGE_KEYS,
   SOLANA_CONFIG,
-  MAX_CAPSULE_MODIFICATIONS,
 } from '@/constants'
 import { daysToSeconds } from '@/utils/intent'
 import { getVaultTokenAccountsWithFallback } from '@/lib/spl'
@@ -131,7 +130,7 @@ export const CREATE_FAQS = [
   {
     key: 'beneficiaries',
     question: 'Can I Change My Beneficiaries?',
-    answer: 'You can update beneficiaries while you still have modification quota remaining and the capsule has not reached a terminal state.',
+    answer: 'Beneficiaries are sealed when the capsule is created. To change them, cancel the capsule (your assets return to your wallet) and create a new one — there is no limit on how many capsules a wallet can create.',
   },
 ] as const
 
@@ -182,7 +181,6 @@ export function useCreateCapsuleForm() {
   const [existingCapsuleCheck, setExistingCapsuleCheck] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle')
   const [existingCapsuleCheckError, setExistingCapsuleCheckError] = useState<string | null>(null)
   const [existingCapsuleCheckAttempt, setExistingCapsuleCheckAttempt] = useState(0)
-  const [modifyCount, setModifyCount] = useState<number>(0)
   const [openSection, setOpenSection] = useState<'asset' | 'beneficiaries' | 'intent' | 'review'>('asset')
   const [openFaq, setOpenFaq] = useState<string | null>(CREATE_FAQS[0].key)
   // NFT flow
@@ -253,9 +251,6 @@ export function useCreateCapsuleForm() {
         return
       }
 
-      const countKey = STORAGE_KEYS.CAPSULE_MODIFY_COUNT(publicKey.toBase58())
-      const stored = localStorage.getItem(countKey)
-      setModifyCount(stored ? parseInt(stored, 10) || 0 : 0)
       setExistingCapsuleCheck('loading')
       setExistingCapsuleCheckError(null)
 
@@ -519,14 +514,6 @@ export function useCreateCapsuleForm() {
       return
     }
 
-    // Check modification limit (3 per wallet)
-    const countKey = STORAGE_KEYS.CAPSULE_MODIFY_COUNT(publicKey.toBase58())
-    const currentCount = parseInt(localStorage.getItem(countKey) || '0', 10)
-    if (currentCount >= MAX_CAPSULE_MODIFICATIONS) {
-      setError(`You have reached the maximum number of capsule modifications (${MAX_CAPSULE_MODIFICATIONS}) for this wallet.`)
-      return
-    }
-
     // Single authoritative validation gate (lib/schemas): amount format + wallet-balance ceiling,
     // beneficiary addresses + shares (sum to 100, no duplicates, no self), inactivity (whole number,
     // <= 100y), optional future target date, intent length, and email. Bad input never reaches a
@@ -719,13 +706,6 @@ export function useCreateCapsuleForm() {
 
       const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
       const ownerBase58 = publicKey?.toBase58()
-
-      // Increment modification count
-      if (publicKey) {
-        const newCount = currentCount + 1
-        localStorage.setItem(countKey, String(newCount))
-        setModifyCount(newCount)
-      }
 
       // Save intent to localStorage
       if (intent.trim() && publicKey) {
@@ -926,7 +906,6 @@ export function useCreateCapsuleForm() {
     !isPending &&
     !existingCapsule &&
     existingCapsuleCheck === 'ready' &&
-    modifyCount < MAX_CAPSULE_MODIFICATIONS &&
     wallet.signMessage &&
     isValidEmail(intentEmail) &&
     inactivityDays &&
@@ -989,7 +968,6 @@ export function useCreateCapsuleForm() {
     existingCapsuleCheck,
     existingCapsuleCheckError,
     retryExistingCapsuleCheck: () => setExistingCapsuleCheckAttempt((attempt) => attempt + 1),
-    modifyCount,
     openSection,
     setOpenSection,
     openFaq,

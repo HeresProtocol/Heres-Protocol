@@ -205,8 +205,6 @@ export const PER_TEE = {
   DOCS_URL: 'https://docs.magicblock.gg/pages/ephemeral-rollups-ers/introduction',
 } as const
 
-export const MAX_CAPSULE_MODIFICATIONS = 3
-
 export const STORAGE_KEYS = {
   CAPSULE_INTENT: (address: string, id: string | number) => `capsule_intent_${address}_${id}`,
   CAPSULE_CREATION_TX: (address: string) => `capsule_creation_tx_${address}`,
@@ -214,5 +212,4 @@ export const STORAGE_KEYS = {
   CAPSULE_EXECUTION_TX: (address: string) => `capsule_execution_tx_${address}`,
   CAPSULE_EXECUTION_TX_WITH_SIG: (address: string, signature: string) => `capsule_execution_tx_${address}_${signature}`,
   EXECUTED_CAPSULES: (address: string) => `executed_capsules_${address}`,
-  CAPSULE_MODIFY_COUNT: (address: string) => `capsule_modify_count_${address}`,
 } as const

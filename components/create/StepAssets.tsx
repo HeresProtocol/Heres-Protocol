@@ -144,6 +144,7 @@ export function StepAssets(props: {
   solPrice: number | null
   selectedKeys: string[]
   selectedAmounts: Record<string, string>
+  onAmount: (key: string, amount: string) => void
   onToggleAsset: (key: string) => void
   tokensLoading: boolean
   tokensError: boolean
@@ -343,10 +344,11 @@ export function StepAssets(props: {
                           <span className="cf-sel-item__sym">{asset.displaySymbol}</span>
                           <span className="cf-sel-item__name">{asset.mint ? asset.name : 'Keeps 0.08 for fees'}</span>
                         </span>
-                        <span className="cf-sel-item__amt">
-                          {fmtCompact(amount)}{asset.displaySymbol.length <= 8 ? ` ${asset.displaySymbol}` : ''}
-                          <small>{usd == null ? '—' : fmtUsd(usd)}</small>
-                        </span>
+                        <label className="cf-sel-item__amt cf-selected-amount">
+                          <span>Amount to protect</span>
+                          <input className="cf-input" inputMode="decimal" aria-label={`Amount to protect in ${asset.displaySymbol}`} value={props.selectedAmounts[key] ?? ''} onChange={e => props.onAmount(key, e.target.value.replace(/[^0-9.]/g, ''))} />
+                          <small>{usd == null ? asset.displaySymbol : fmtUsd(usd)}</small>
+                        </label>
                         <button type="button" className="cf-x" onClick={() => props.onToggleAsset(key)} aria-label={`Remove ${asset.displaySymbol}`}><IconX /></button>
                       </div>
                     )

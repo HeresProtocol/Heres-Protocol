@@ -1,7 +1,6 @@
 'use client'
 
-import React, { useEffect, useRef, useState } from 'react'
-import Image from 'next/image'
+import { useEffect, useRef } from 'react'
 
 export interface StepItem {
   num: string
@@ -9,166 +8,131 @@ export interface StepItem {
   description: string
 }
 
-interface HorizontalStepsProps {
-  steps: StepItem[]
-}
+const GAP = 16
 
-export function HorizontalSteps({ steps }: HorizontalStepsProps) {
-  const containerRef = useRef<HTMLDivElement>(null)
+/**
+ * "How it works": the section pins while vertical scrolling slides the cards sideways.
+ *
+ * - The scroll runway is exactly the distance the cards travel (no dead scroll / gap below).
+ * - Motion is written straight to the DOM inside requestAnimationFrame (no React re-render per frame).
+ * - Cards still peeking in from the right are sage; each turns dark once fully in view.
+ * - Before hydration, without JS, or with reduced motion it is a plain swipeable row.
+ */
+export function HorizontalSteps({ steps }: { steps: StepItem[] }) {
+  const wrapRef = useRef<HTMLElement>(null)
+  const stickyRef = useRef<HTMLDivElement>(null)
+  const viewportRef = useRef<HTMLDivElement>(null)
   const trackRef = useRef<HTMLDivElement>(null)
-  const [scrollProgress, setScrollProgress] = useState(0)
-  const [cardWidth, setCardWidth] = useState<number>(460)
-  const [leftPadding, setLeftPadding] = useState<number>(80)
-  const [isDesktop, setIsDesktop] = useState<boolean>(true)
 
   useEffect(() => {
-    const updateDimensions = () => {
-      const vw = window.innerWidth
-      const desktop = vw >= 768
-      setIsDesktop(desktop)
+    const wrap = wrapRef.current
+    const sticky = stickyRef.current
+    const viewport = viewportRef.current
+    const track = trackRef.current
+    if (!wrap || !sticky || !viewport || !track) return
 
-      if (!desktop) return
+    const cards = Array.from(track.children) as HTMLElement[]
+    const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)')
+    let travel = 0
+    let pinned = false
+    let raf = 0
 
-      // Match the shared landing-page content rail instead of duplicating its dimensions here.
-      const sharedContainer = document.querySelector<HTMLElement>('.hr-header-inner')
-      const shellLeft = sharedContainer?.getBoundingClientRect().left
-        ?? Math.max(20, (vw - Math.min(vw - 40, 1356)) / 2)
-      setLeftPadding(shellLeft)
-
-      // Calculate card width so:
-      // Card 1 + Gap + Card 2 + Gap + Card 3 (quarter: 0.25) = vw - shellLeft
-      // 2.25 * cardWidth + 2 * gap = vw - shellLeft
-      const gap = 16
-      const available = vw - shellLeft
-      const calculated = (available - 2 * gap) / 2.25
-      const clamped = Math.max(320, Math.min(500, calculated))
-      setCardWidth(clamped)
-    }
-
-    updateDimensions()
-    window.addEventListener('resize', updateDimensions, { passive: true })
-    return () => window.removeEventListener('resize', updateDimensions)
-  }, [])
-
-  useEffect(() => {
-    if (!isDesktop) return
-
-    let rafId: number
-    const handleScroll = () => {
-      if (!containerRef.current) return
-      const rect = containerRef.current.getBoundingClientRect()
-      const totalScroll = rect.height - window.innerHeight
-      if (totalScroll <= 0) return
-
-      const progress = Math.min(1, Math.max(0, -rect.top / totalScroll))
-      setScrollProgress(progress)
-    }
-
-    const onScroll = () => {
-      cancelAnimationFrame(rafId)
-      rafId = requestAnimationFrame(handleScroll)
-    }
-
-    window.addEventListener('scroll', onScroll, { passive: true })
-    handleScroll()
-
-    return () => {
-      window.removeEventListener('scroll', onScroll)
-      cancelAnimationFrame(rafId)
-    }
-  }, [isDesktop])
-
-  // Support horizontal trackpad swipe / shift+wheel to smoothly advance pinned scroll
-  useEffect(() => {
-    if (!isDesktop || !containerRef.current) return
-
-    const el = containerRef.current
-    const handleWheel = (e: WheelEvent) => {
-      if (Math.abs(e.deltaX) > Math.abs(e.deltaY) && Math.abs(e.deltaX) > 4) {
-        window.scrollBy({ top: e.deltaX })
+    const setActive = () => {
+      // A card turns dark once it is fully on screen; cards still peeking in from the right stay sage.
+      const limit = document.documentElement.clientWidth + 1
+      for (const card of cards) {
+        const reached = !pinned || card.getBoundingClientRect().right <= limit
+        card.classList.toggle('hr-step-card-active', reached)
+        card.classList.toggle('hr-step-card-sage', !reached)
       }
     }
 
-    el.addEventListener('wheel', handleWheel, { passive: true })
-    return () => {
-      el.removeEventListener('wheel', handleWheel)
+    const render = () => {
+      raf = 0
+      if (!pinned) return setActive()
+      const runway = wrap.offsetHeight - sticky.offsetHeight
+      const progress = runway > 0 ? Math.min(1, Math.max(0, -wrap.getBoundingClientRect().top / runway)) : 0
+      track.style.transform = `translate3d(${-progress * travel}px, 0, 0)`
+      setActive()
     }
-  }, [isDesktop])
+    const schedule = () => { if (!raf) raf = requestAnimationFrame(render) }
 
-  // Total horizontal distance to scroll so Card 4 is fully shown and flush on the right
-  const gap = 16
-  const totalTrackWidth = steps.length * cardWidth + (steps.length - 1) * gap
-  const viewportWidth = typeof window !== 'undefined' ? window.innerWidth : 1280
-  const maxScroll = Math.max(0, totalTrackWidth - (viewportWidth - leftPadding) + 24)
-  const translateX = isDesktop ? scrollProgress * maxScroll : 0
+    const measure = () => {
+      const vw = document.documentElement.clientWidth
+      // Align with the landing content rail (same left/right edges as the header).
+      const rail = document.querySelector<HTMLElement>('.hr-header-inner')?.getBoundingClientRect()
+      const left = rail ? rail.left : 20
+      const right = rail ? vw - rail.right : 20
+      const mobile = vw < 768
+      const cardWidth = mobile
+        ? Math.min(vw * 0.82, 380)
+        : Math.max(300, Math.min(520, (vw - left - 2 * GAP) / 2.25))
+      cards.forEach((c) => { c.style.width = `${cardWidth}px`; c.style.flex = `0 0 ${cardWidth}px` })
+      track.style.gap = `${GAP}px`
+      viewport.style.paddingLeft = `${left}px`
+      viewport.style.paddingRight = `${right}px`
+
+      const trackWidth = cards.length * cardWidth + (cards.length - 1) * GAP
+      travel = Math.max(0, trackWidth - (vw - left - right))
+      // Only pin when the whole section fits on screen below the fixed 96px site header
+      // (e.g. not on a phone held sideways); otherwise it stays a swipeable row.
+      const header = sticky.firstElementChild as HTMLElement | null
+      const contentHeight = (header?.offsetHeight ?? 0) + 48 + viewport.offsetHeight
+      pinned = travel > 0 && !reduceMotion.matches && contentHeight + 96 <= window.innerHeight
+      wrap.classList.toggle('is-pinned', pinned)
+      // Runway = pinned frame + exactly the horizontal travel, so scrolling ends the moment card 4 lands.
+      wrap.style.height = pinned ? `${sticky.offsetHeight + travel}px` : ''
+      if (!pinned) track.style.transform = ''
+      render()
+    }
+
+    // Horizontal trackpad swipes / shift+wheel advance the pinned scroll too.
+    const onWheel = (e: WheelEvent) => {
+      if (pinned && Math.abs(e.deltaX) > Math.abs(e.deltaY) && Math.abs(e.deltaX) > 4) window.scrollBy({ top: e.deltaX })
+    }
+
+    measure()
+    const ro = new ResizeObserver(() => measure())
+    ro.observe(sticky)
+    window.addEventListener('scroll', schedule, { passive: true })
+    window.addEventListener('resize', measure, { passive: true })
+    reduceMotion.addEventListener('change', measure)
+    wrap.addEventListener('wheel', onWheel, { passive: true })
+    viewport.addEventListener('scroll', schedule, { passive: true })
+    return () => {
+      cancelAnimationFrame(raf)
+      ro.disconnect()
+      window.removeEventListener('scroll', schedule)
+      window.removeEventListener('resize', measure)
+      reduceMotion.removeEventListener('change', measure)
+      wrap.removeEventListener('wheel', onWheel)
+      viewport.removeEventListener('scroll', schedule)
+    }
+  }, [])
 
   return (
-    <div
-      ref={containerRef}
-      className="hr-steps-pinned-wrap"
-      id="how"
-      aria-labelledby="hr-how-title"
-    >
-      <div className="hr-steps-sticky">
+    <section ref={wrapRef} className="hr-steps-pinned-wrap" id="how" aria-labelledby="hr-how-title">
+      <div ref={stickyRef} className="hr-steps-sticky">
         <div className="hr-steps-header">
           <span className="hr-eyebrow">SIMPLE STEPS</span>
           <h2 id="hr-how-title">How it works</h2>
         </div>
-
-        <div
-          className="hr-steps-track-viewport"
-          style={isDesktop ? { paddingLeft: `${leftPadding}px` } : undefined}
-        >
-          <div
-            ref={trackRef}
-            className="hr-steps-track"
-            style={
-              isDesktop
-                ? {
-                    transform: `translate3d(-${translateX}px, 0, 0)`,
-                    gap: `${gap}px`,
-                  }
-                : undefined
-            }
-          >
-            {steps.map((step, idx) => {
-              // Card 1 & 2 are initially active. Card 3 activates when scrolling into view, Card 4 when scrolling further
-              const isActive =
-                idx < 2 ||
-                (idx === 2 && scrollProgress > 0.28) ||
-                (idx === 3 && scrollProgress > 0.65)
-
-              return (
-                <article
-                  key={step.num}
-                  className={`hr-step-card ${
-                    isActive ? 'hr-step-card-active' : 'hr-step-card-sage'
-                  }`}
-                  style={isDesktop ? { width: `${cardWidth}px`, flex: `0 0 ${cardWidth}px` } : undefined}
-                >
-                  <div className="hr-step-card-top">
-                    {isActive ? (
-                      <span className="hr-step-badge">{step.num}</span>
-                    ) : (
-                      <span className="hr-step-num">{step.num}</span>
-                    )}
-                    <Image
-                      src="/figma/fingerprint-white.png"
-                      alt=""
-                      width={36}
-                      height={40}
-                      className="hr-step-icon"
-                      unoptimized
-                    />
-                  </div>
-                  <h3>{step.title}</h3>
-                  <p>{step.description}</p>
-                </article>
-              )
-            })}
+        <div ref={viewportRef} className="hr-steps-track-viewport">
+          <div ref={trackRef} className="hr-steps-track">
+            {steps.map((step) => (
+              <article key={step.num} className="hr-step-card hr-step-card-active">
+                <div className="hr-step-card-top">
+                  <span className="hr-step-badge">{step.num}</span>
+                  {/* Fingerprint drawn as a CSS mask so its colour can change (white, red on hover). */}
+                  <span className="hr-step-icon" aria-hidden="true" />
+                </div>
+                <h3>{step.title}</h3>
+                <p>{step.description}</p>
+              </article>
+            ))}
           </div>
         </div>
       </div>
-    </div>
+    </section>
   )
 }

@@ -36,10 +36,10 @@ export function Stepper({ current }: { current: number }) {
  * Page frame: logo, the red threads, and the card stage. The threads live in the design's
  * 1512 x 853 artboard space, positioned from the card so their ends always tuck under it.
  */
-export function CreateShell({ ribbons, children, success = false }: { ribbons: string[]; children: ReactNode; success?: boolean }) {
+export function CreateShell({ ribbons, children, success = false, spinLogo = false }: { ribbons: string[]; children: ReactNode; success?: boolean; spinLogo?: boolean }) {
   return (
     <div className="cf-page">
-      <Link href="/" className="cf-logo" aria-label="Heres home">
+      <Link href="/" className={`cf-logo${spinLogo ? ' cf-logo--spin' : ''}`} aria-label="Heres home">
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img src="/figma/logo.png" alt="Heres" />
       </Link>
