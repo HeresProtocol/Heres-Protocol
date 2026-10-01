@@ -180,11 +180,12 @@
   padding-top: 112px;
   padding-bottom: clamp(24px, 4vh, 50px);
 }
-/* Small laptops: the 1512:976 ratio gets too short for the copy + legacy card,
-   so hold a minimum height and crop the photo (cover) instead of stretching it. */
-@media (min-width: 861px) {
-  .hr-hero { min-height: 680px; }
-  .hr-hero .hr-hero-bg-img { object-fit: cover !important; object-position: 70% top; }
+/* Full-width hero (1024px+): the photo keeps object-fit: fill at its exact 1512:976 ratio (never
+   cropped), so its ribbon leaves the bottom edge exactly where the ribbon below the hero begins. */
+@media (min-width: 1024px) and (max-width: 1100px) {
+  .hr-hero-content { padding-top: 100px; }
+  .hr-hero-copy p { margin-bottom: 24px; }
+  .hr-hero-best-work { margin-top: 12px !important; margin-bottom: 10px !important; }
 }
 .hr-hero-copy {
   max-width: 680px;
@@ -408,11 +409,7 @@
 }
 .hr-steps-pinned-wrap.is-pinned .hr-steps-sticky {
   position: sticky;
-  top: 0;
-  height: 100vh;
-  height: 100svh; /* stable on mobile while the address bar shows/hides */
-  padding-top: 96px; /* clears the fixed site header */
-  box-sizing: border-box;
+  top: 96px; /* exact value (centred, below the fixed header) is set by HorizontalSteps */
   overflow: hidden;
 }
 .hr-steps-header {
@@ -1231,6 +1228,26 @@ body:has(.hr-site) { overflow-x: clip; }
     padding: 10px 16px !important;
     font-size: 13px !important;
   }
+  .hr-hero-grid, .hr-mission-grid, .hr-privacy-grid, .hr-close-grid { grid-template-columns: 1fr; gap: 40px; }
+  .hr-mission-copy, .hr-close-copy { transform: none; }
+  .hr-feature-grid { grid-template-columns: 1fr; }
+  .hr-audience-card { min-height: 0; }
+  .hr-step-grid { grid-template-columns: 1fr; }
+  .hr-footer-top { grid-template-columns: repeat(2, 1fr); }
+  .hr-final-dog-walker {
+    position: relative;
+    left: auto;
+    bottom: auto;
+    transform: none;
+    margin: 32px auto 0;
+    width: 100px;
+    height: auto;
+  }
+}
+
+/* Stacked hero (copy, then the ribbon-free photo) up to 1023px: covers phones, tablets, small
+   laptops and phones in "desktop site" mode, where the full-width photo is too short for the copy. */
+@media (max-width: 1023px) {
   .hr-hero { aspect-ratio: unset; min-height: 0; height: auto; }
   .hr-hero-content {
     order: 1;
@@ -1255,25 +1272,10 @@ body:has(.hr-site) { overflow-x: clip; }
     object-fit: cover !important;
     object-position: 72% 40%;
   }
-  .hr-hero-grid, .hr-mission-grid, .hr-privacy-grid, .hr-close-grid { grid-template-columns: 1fr; gap: 40px; }
-  .hr-mission-copy, .hr-close-copy { transform: none; }
-  .hr-feature-grid { grid-template-columns: 1fr; }
-  .hr-audience-card { min-height: 0; }
-  .hr-step-grid { grid-template-columns: 1fr; }
-  .hr-footer-top { grid-template-columns: repeat(2, 1fr); }
-  .hr-final-dog-walker {
-    position: relative;
-    left: auto;
-    bottom: auto;
-    transform: none;
-    margin: 32px auto 0;
-    width: 100px;
-    height: auto;
-  }
 }
 
 /* Tablet: wide enough for a landscape crop with the legacy card resting on the meadow. */
-@media (min-width: 521px) and (max-width: 860px) {
+@media (min-width: 521px) and (max-width: 1023px) {
   .hr-hero-bg-wrap {
     aspect-ratio: 3 / 2;
     margin-top: -300px;

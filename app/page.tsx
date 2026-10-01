@@ -1,5 +1,5 @@
 import type { Metadata } from 'next'
-import Image from 'next/image'
+import Image, { getImageProps } from 'next/image'
 import Link from 'next/link'
 import { PrivyLoginButton } from '@/components/PrivyLoginButton'
 import { HorizontalSteps } from '@/components/landing/HorizontalSteps'
@@ -75,6 +75,15 @@ const audiences = [
   },
 ]
 
+const heroImage = {
+  alt: 'Parents lifting their child in a meadow',
+  fill: true,
+  priority: true,
+  sizes: '(max-width: 1512px) 100vw, 1512px',
+} as const
+const { props: heroWide } = getImageProps({ ...heroImage, src: '/figma/hero-wide-bg.png' })
+const { props: heroClean } = getImageProps({ ...heroImage, src: '/figma/hero-wide-bg-clean.png' })
+
 // Re-render the static page every 5 minutes so the protocol totals baked into it stay current.
 export const revalidate = 300
 
@@ -119,13 +128,13 @@ export default async function HomePage() {
         {/* HERO SECTION */}
         <section className="hr-hero" aria-labelledby="hr-hero-title">
           <div className="hr-hero-bg-wrap">
-            <Image sizes="(max-width: 1512px) 100vw, 1512px"
-              src="/figma/hero-wide-bg.png"
-              alt="Parents lifting child in meadow with continuous thread"
-              fill
-              priority
-              className="hr-hero-bg-img"
-            />
+            {/* Full-width layouts show the photo with its ribbon (it meets the ribbon below the hero).
+                Stacked phone/tablet layouts crop the photo, so they use the ribbon-free version. */}
+            <picture>
+              <source media="(min-width: 1024px)" srcSet={heroWide.srcSet} sizes={heroWide.sizes} />
+              {/* eslint-disable-next-line jsx-a11y/alt-text -- alt comes from getImageProps */}
+              <img {...heroClean} className="hr-hero-bg-img" loading="eager" fetchPriority="high" />
+            </picture>
           </div>
 
           <div className="hr-shell hr-hero-content">

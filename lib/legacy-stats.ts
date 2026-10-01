@@ -55,20 +55,36 @@ const toNum = (value: unknown): number => {
 export async function buildLegacyStatsSummary(
   connection: Connection,
   programId: PublicKey,
-  forceRefresh = false
+  forceRefresh = false,
+  fallbacks?: Connection[]
 ): Promise<DashboardSummary> {
   const key = programId.toBase58()
   const idl = LEGACY_IDLS[key]
   if (!idl) return EMPTY_SUMMARY
 
   const now = Date.now()
-  if (!forceRefresh) {
-    const hit = cache.get(key)
-    if (hit && hit.expiresAt > now) return hit.summary
+  const hit = cache.get(key)
+  if (!forceRefresh && hit && hit.expiresAt > now) return hit.summary
+
+  // Try the primary RPC, then the fallback, then the public cluster: one exhausted provider plan
+  // must not blank the landing stats. If every endpoint fails, keep serving the last good result.
+  let accounts: Awaited<ReturnType<Connection['getProgramAccounts']>> | null = null
+  let lastError: unknown
+  for (const conn of [connection, ...(fallbacks ?? [])]) {
+    try {
+      accounts = await conn.getProgramAccounts(programId, { commitment: 'confirmed' })
+      connection = conn
+      break
+    } catch (error) {
+      lastError = error
+    }
+  }
+  if (!accounts) {
+    if (hit) return hit.summary
+    throw lastError
   }
 
   const coder = new BorshAccountsCoder(idl as never)
-  const accounts = await connection.getProgramAccounts(programId, { commitment: 'confirmed' })
 
   let total = 0
   let active = 0

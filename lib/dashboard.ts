@@ -1354,6 +1354,14 @@ function toListItem(row: DashboardCapsuleRow): CapsuleListItem {
   }
 }
 
+// Last-resort read-only connection to the public cluster for aggregate stats, used when the
+// configured providers are rejecting requests (bad key or exhausted plan).
+let publicStatsConnection: Connection | null = null
+function getPublicStatsConnection(): Connection {
+  publicStatsConnection ??= new Connection(HELIUS_CONFIG.PUBLIC_RPC_URL, { commitment: 'confirmed' })
+  return publicStatsConnection
+}
+
 export async function getCapsulesSummary(forceRefresh = false): Promise<CapsuleSummaryResponse> {
   // Aggregate stats (public dashboard + landing hero) can be sourced from an earlier
   // high-activity deploy whose on-chain layout differs from the current program. When
@@ -1361,7 +1369,10 @@ export async function getCapsulesSummary(forceRefresh = false): Promise<CapsuleS
   // the live snapshot pipeline. Functional flows and the /capsules list are unaffected.
   const statsProgramId = getStatsProgramId()
   if (isLegacyStatsProgram(statsProgramId)) {
-    const summary = await buildLegacyStatsSummary(getSolanaConnection(), statsProgramId, forceRefresh)
+    const summary = await buildLegacyStatsSummary(getSolanaConnection(), statsProgramId, forceRefresh, [
+      getSolanaFallbackConnection(),
+      getPublicStatsConnection(),
+    ])
     return { summary, timestamp: Date.now(), complete: true }
   }
 
