@@ -578,10 +578,16 @@
   position: absolute;
   left: 100%;
   top: 140px;
-  width: 79px;
+  /* The loop lives in the page margin beside the card: never wider than that margin (minus 8px),
+     so it stays whole and attached to the card instead of being cut off at the screen edge. */
+  width: min(79px, calc(max(var(--hr-page-gutter), (100vw - var(--hr-container-max)) / 2) - 8px));
   height: 260px;
   pointer-events: none;
   z-index: 2;
+}
+/* Compact (< 600px): the margin is too narrow for a loop; the ribbon simply passes behind the card. */
+@media (max-width: 599px) {
+  .hr-dark-card-thread-wrap { display: none; }
 }
 .hr-dark-card-thread-wrap img {
   width: 100%;
@@ -857,7 +863,9 @@
   left: 0;
   width: 1512px;
   max-width: none;
-  height: 744px;
+  /* Stretch to the section's real height (it grows when the cards stack), so the ribbon always
+     ends on the section's bottom edge, exactly where the close-section ribbon begins. */
+  height: 100%;
   display: block;
 }
 .hr-audience-shell {
@@ -1120,6 +1128,13 @@
   stroke: #c81c21;
   stroke-linecap: round;
   stroke-linejoin: round;
+  /* One line weight in screen pixels for every ribbon piece (4px, as at the 1512px design width),
+     so scaling or stretching a piece never makes the line thinner or thicker than its neighbours. */
+  vector-effect: non-scaling-stroke;
+  stroke-width: 4px;
+}
+@media (max-width: 599px) {
+  .hr-ribbon-svg path { stroke-width: 3px; }
 }
 .hr-hero-transition .hr-ribbon-svg,
 .hr-steps-bridge-img.hr-ribbon-svg {

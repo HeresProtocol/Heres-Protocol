@@ -83,6 +83,9 @@ const heroImage = {
 } as const
 const { props: heroWide } = getImageProps({ ...heroImage, src: '/figma/hero-wide-bg.png' })
 const { props: heroClean } = getImageProps({ ...heroImage, src: '/figma/hero-wide-bg-clean.png' })
+const privacyImage = { alt: '', width: 372, height: 463, sizes: '372px' } as const
+const { props: privacyRibbon } = getImageProps({ ...privacyImage, src: '/figma/figures/privacy-couple-ribbon@2x.png' })
+const { props: privacyClean } = getImageProps({ ...privacyImage, src: '/figma/figures/privacy-couple-clean@2x.png' })
 
 // Re-render the static page every 5 minutes so the protocol totals baked into it stay current.
 export const revalidate = 300
@@ -360,13 +363,13 @@ export default async function HomePage() {
           </div>
 
           <div className="hr-privacy-visual-wrap" aria-hidden="true">
-            <Image
-              src="/figma/figures/privacy-couple-ribbon@2x.png"
-              alt=""
-              width={372}
-              height={463}
-              className="hr-privacy-visual-img"
-            />
+            {/* From 1200px the photo sits on the centred grid, where its ribbon meets the "Who it's for"
+                ribbon below. Narrower layouts move the photo, so they use the ribbon-free version. */}
+            <picture>
+              <source media="(min-width: 1200px)" srcSet={privacyRibbon.srcSet} sizes={privacyRibbon.sizes} />
+              {/* eslint-disable-next-line jsx-a11y/alt-text -- decorative; alt="" comes from getImageProps */}
+              <img {...privacyClean} className="hr-privacy-visual-img" />
+            </picture>
           </div>
         </section>
 
