@@ -180,11 +180,12 @@
   padding-top: 112px;
   padding-bottom: clamp(24px, 4vh, 50px);
 }
-/* Small laptops: the 1512:976 ratio gets too short for the copy + legacy card,
-   so hold a minimum height and crop the photo (cover) instead of stretching it. */
-@media (min-width: 861px) {
-  .hr-hero { min-height: 680px; }
-  .hr-hero .hr-hero-bg-img { object-fit: cover !important; object-position: 70% top; }
+/* Full-width hero (1024px+): the photo keeps object-fit: fill at its exact 1512:976 ratio (never
+   cropped), so its ribbon leaves the bottom edge exactly where the ribbon below the hero begins. */
+@media (min-width: 1024px) and (max-width: 1100px) {
+  .hr-hero-content { padding-top: 100px; }
+  .hr-hero-copy p { margin-bottom: 24px; }
+  .hr-hero-best-work { margin-top: 12px !important; margin-bottom: 10px !important; }
 }
 .hr-hero-copy {
   max-width: 680px;
@@ -408,11 +409,7 @@
 }
 .hr-steps-pinned-wrap.is-pinned .hr-steps-sticky {
   position: sticky;
-  top: 0;
-  height: 100vh;
-  height: 100svh; /* stable on mobile while the address bar shows/hides */
-  padding-top: 96px; /* clears the fixed site header */
-  box-sizing: border-box;
+  top: 96px; /* exact value (centred, below the fixed header) is set by HorizontalSteps */
   overflow: hidden;
 }
 .hr-steps-header {
@@ -581,10 +578,16 @@
   position: absolute;
   left: 100%;
   top: 140px;
-  width: 79px;
+  /* The loop lives in the page margin beside the card: never wider than that margin (minus 8px),
+     so it stays whole and attached to the card instead of being cut off at the screen edge. */
+  width: min(79px, calc(max(var(--hr-page-gutter), (100vw - var(--hr-container-max)) / 2) - 8px));
   height: 260px;
   pointer-events: none;
   z-index: 2;
+}
+/* Compact (< 600px): the margin is too narrow for a loop; the ribbon simply passes behind the card. */
+@media (max-width: 599px) {
+  .hr-dark-card-thread-wrap { display: none; }
 }
 .hr-dark-card-thread-wrap img {
   width: 100%;
@@ -860,7 +863,9 @@
   left: 0;
   width: 1512px;
   max-width: none;
-  height: 744px;
+  /* Stretch to the section's real height (it grows when the cards stack), so the ribbon always
+     ends on the section's bottom edge, exactly where the close-section ribbon begins. */
+  height: 100%;
   display: block;
 }
 .hr-audience-shell {
@@ -1123,6 +1128,23 @@
   stroke: #c81c21;
   stroke-linecap: round;
   stroke-linejoin: round;
+  /* One line weight in screen pixels for every ribbon piece (4px, as at the 1512px design width),
+     so scaling or stretching a piece never makes the line thinner or thicker than its neighbours. */
+  vector-effect: non-scaling-stroke;
+  stroke-width: 4px;
+}
+@media (max-width: 599px) {
+  .hr-ribbon-svg path { stroke-width: 3px; }
+  /* Compact screens: show the full-width ribbon bands larger, cropping their outer edges, instead of
+     squeezing 1512px of artwork into a phone (which shrank the figures to ~40px). Offsets come from
+     where the figures sit in the artwork: hero figure at 21-27% -> lands ~30% across the screen;
+     steps figures at 19-28% and 68-71% -> ~21-33% and ~84-88% across, both clear of the edges. */
+  .hr-hero-transition { width: 180vw; max-width: none; margin-left: -14vw; }
+  .hr-steps-ribbon-bar { width: 130vw; max-width: none; margin-left: -4vw; }
+  /* The "Who it's for" and closing ribbons are 1512px artworks whose curves sit beside the cards;
+     on a phone the stacked full-width cards hide them, leaving only random-looking fragments, so
+     they are omitted here (decoration is the last thing to reduce, and only when it can't work). */
+  .hr-audience-thread-wrap, .hr-close-thread-wrap { display: none; }
 }
 .hr-hero-transition .hr-ribbon-svg,
 .hr-steps-bridge-img.hr-ribbon-svg {
@@ -1231,6 +1253,26 @@ body:has(.hr-site) { overflow-x: clip; }
     padding: 10px 16px !important;
     font-size: 13px !important;
   }
+  .hr-hero-grid, .hr-mission-grid, .hr-privacy-grid, .hr-close-grid { grid-template-columns: 1fr; gap: 40px; }
+  .hr-mission-copy, .hr-close-copy { transform: none; }
+  .hr-feature-grid { grid-template-columns: 1fr; }
+  .hr-audience-card { min-height: 0; }
+  .hr-step-grid { grid-template-columns: 1fr; }
+  .hr-footer-top { grid-template-columns: repeat(2, 1fr); }
+  .hr-final-dog-walker {
+    position: relative;
+    left: auto;
+    bottom: auto;
+    transform: none;
+    margin: 32px auto 0;
+    width: 100px;
+    height: auto;
+  }
+}
+
+/* Stacked hero (copy, then the ribbon-free photo) up to 1023px: covers phones, tablets, small
+   laptops and phones in "desktop site" mode, where the full-width photo is too short for the copy. */
+@media (max-width: 1023px) {
   .hr-hero { aspect-ratio: unset; min-height: 0; height: auto; }
   .hr-hero-content {
     order: 1;
@@ -1255,25 +1297,17 @@ body:has(.hr-site) { overflow-x: clip; }
     object-fit: cover !important;
     object-position: 72% 40%;
   }
-  .hr-hero-grid, .hr-mission-grid, .hr-privacy-grid, .hr-close-grid { grid-template-columns: 1fr; gap: 40px; }
-  .hr-mission-copy, .hr-close-copy { transform: none; }
-  .hr-feature-grid { grid-template-columns: 1fr; }
-  .hr-audience-card { min-height: 0; }
-  .hr-step-grid { grid-template-columns: 1fr; }
-  .hr-footer-top { grid-template-columns: repeat(2, 1fr); }
-  .hr-final-dog-walker {
-    position: relative;
-    left: auto;
-    bottom: auto;
-    transform: none;
-    margin: 32px auto 0;
-    width: 100px;
-    height: auto;
-  }
+}
+
+/* Stacked hero (< 1024px): the ground artwork's thin strip at x 967-1418 only sits naturally in the
+   full-width desktop composition; here it floats as a stray line, so clip it (the figure's own
+   shadow at x 313-428 is untouched). */
+@media (max-width: 1023px) {
+  .hr-hero-transition .hr-thread-ground-top { clip-path: inset(0 35% 0 0); }
 }
 
 /* Tablet: wide enough for a landscape crop with the legacy card resting on the meadow. */
-@media (min-width: 521px) and (max-width: 860px) {
+@media (min-width: 521px) and (max-width: 1023px) {
   .hr-hero-bg-wrap {
     aspect-ratio: 3 / 2;
     margin-top: -300px;
@@ -1567,4 +1601,28 @@ body:has(.hr-site) { overflow-x: clip; }
       linear-gradient(180deg, rgba(3, 10, 24, 0.72) 0%, rgba(3, 10, 24, 0.5) 55%, rgba(3, 10, 24, 0.1) 100%),
       rgba(12, 30, 74, 0.2);
   }
+}
+
+/* PRIVACY FIGURES BELOW 1200px (ribbon-free artwork)
+   The clean artwork's visible figures occupy x 56-342 / y 53-532 of its 744x926 canvas; the rest was
+   room for the ribbon. Crop to that box so the figures themselves (not empty canvas) are what gets
+   aligned: they stand on the section's bottom edge like the desktop composition, on the content's
+   right margin. Box 200x335 = scale 0.699 (img 520px wide, offset -39/-37). */
+@media (max-width: 1199px) {
+  .hr-privacy-visual-wrap {
+    width: 200px;
+    height: 335px;
+    overflow: hidden;
+    right: max(var(--hr-page-gutter), calc((100vw - var(--hr-container-max)) / 2));
+  }
+  .hr-privacy-visual-wrap .hr-privacy-visual-img { width: 520px; max-width: none; height: auto; margin: -37px 0 0 -39px; }
+}
+/* Tablet portrait: the figures sit below the copy, on the right margin. */
+@media (min-width: 600px) and (max-width: 768px) {
+  .hr-privacy-visual-wrap { right: auto; margin-right: var(--hr-page-gutter); }
+}
+/* Phones: smaller (box 160x268 = scale 0.559) and centred. */
+@media (max-width: 599px) {
+  .hr-privacy-visual-wrap { position: relative; right: auto; bottom: auto; width: 160px; height: 268px; margin: 32px auto 0; }
+  .hr-privacy-visual-wrap .hr-privacy-visual-img { width: 416px; margin: -30px 0 0 -31px; }
 }

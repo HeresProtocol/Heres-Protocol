@@ -51,7 +51,8 @@ export function HorizontalSteps({ steps }: { steps: StepItem[] }) {
       raf = 0
       if (!pinned) return setActive()
       const runway = wrap.offsetHeight - sticky.offsetHeight
-      const progress = runway > 0 ? Math.min(1, Math.max(0, -wrap.getBoundingClientRect().top / runway)) : 0
+      const stickTop = parseFloat(sticky.style.top) || 0
+      const progress = runway > 0 ? Math.min(1, Math.max(0, (stickTop - wrap.getBoundingClientRect().top) / runway)) : 0
       track.style.transform = `translate3d(${-progress * travel}px, 0, 0)`
       setActive()
     }
@@ -78,8 +79,15 @@ export function HorizontalSteps({ steps }: { steps: StepItem[] }) {
       // (e.g. not on a phone held sideways); otherwise it stays a swipeable row.
       const header = sticky.firstElementChild as HTMLElement | null
       const contentHeight = (header?.offsetHeight ?? 0) + 48 + viewport.offsetHeight
-      pinned = travel > 0 && !reduceMotion.matches && contentHeight + 96 <= window.innerHeight
+      // ...and only when the screen isn't far taller than the section (e.g. a phone in "desktop site"
+      // mode, ~980x1800): there pinning would just expose a long empty runway, so it stays a row.
+      pinned = travel > 0 && !reduceMotion.matches &&
+        contentHeight + 96 <= window.innerHeight && window.innerHeight <= contentHeight * 2.2
       wrap.classList.toggle('is-pinned', pinned)
+      // The pinned frame is only as tall as its content and is centred in the screen (but never under
+      // the 96px header), so very tall screens (e.g. "desktop site" on a phone) get no empty bands.
+      const free = window.innerHeight - contentHeight
+      sticky.style.top = pinned ? `${free >= 192 ? Math.round(free / 2) : 96}px` : ''
       // Runway = pinned frame + exactly the horizontal travel, so scrolling ends the moment card 4 lands.
       wrap.style.height = pinned ? `${sticky.offsetHeight + travel}px` : ''
       if (!pinned) track.style.transform = ''

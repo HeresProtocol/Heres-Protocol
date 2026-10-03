@@ -26,6 +26,20 @@ test('RPC fallback does not retry ambiguous failures or its own rejection', asyn
   assert.equal(calls, 1)
 })
 
+test('RPC exhausted usage plan (429 max usage) fails over for this and every later request', async () => {
+  const calls: string[] = []
+  const fetcher = async (url: unknown) => {
+    calls.push(String(url))
+    return String(url).includes('primary')
+      ? new Response('{"error":"429 Too Many Requests: max usage reached"}', { status: 429 })
+      : new Response('{}', { status: 200 })
+  }
+  const rpc = rpcFetchWithAuthFallback('https://fallback.example', fetcher as typeof fetch)
+  assert.equal((await rpc('https://primary.example')).status, 200)
+  assert.equal((await rpc('https://primary.example')).status, 200)
+  assert.deepEqual(calls, ['https://primary.example', 'https://fallback.example', 'https://fallback.example'])
+})
+
 test('HTTP authorization failure is distinct from program authorization failure', () => {
   assert.match(normalizeTxError(new Error('failed to get recent blockhash: 401 : Unauthorized')), /RPC service/)
   assert.match(normalizeTxError(new Error('AnchorError Unauthorized. Error Number: 6000')), /wallet is not authorized/)
