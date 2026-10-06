@@ -1,223 +1,76 @@
-# Heres - Privacy-Preserving Insurance Protocol on Solana.
+# Heres Protocol 
 
-> **People disappear. Intent should not**
+**The Trustless Digital Succession & Continuity Engine on Solana.**
+Heres Protocol provides the essential safety net for the future of on-chain wealth. We ensure that self-custodied assets - ranging from crypto to tokenized Real World Assets (RWAs) and equities - are permanently protected from "dead key loss" and securely passed down to your loved ones.
 
-Heres is a **Privacy-Preserving Insurance Protocol on Solana**, where your digital assets remain securely delegated, conditions stay completely private inside **Magicblock Private Ephemeral Rollups (PER / TEE)**, and execution happens automatically when silence becomes truth. 
+## The Problem
 
-Beyond on-chain assets, Heres introduces a **"Confidential Bridge" via Chainlink CRE (Chainlink Runtime Environment)** to securely and autonomously deliver encrypted off-chain *Intent Statements* (such as legacy messages, vault passwords, or recovery codes) directly to your beneficiaries without any middlemen.
+As traditional equities and RWAs rapidly move on-chain, millions of users are taking self-custody of their assets. However, this massive shift comes with a critical vulnerability: **the loss of traditional legal succession safety nets**. 
+If a user loses their private keys or unexpectedly passes away, their generational wealth is permanently lost. This friction is a massive barrier to the long-term institutional and retail adoption of on-chain wealth.
 
----
+## Our Solution
+Heres Protocol acts as a trustless continuity engine. Users can lock their assets into a time-locked **Vault**. If the user's wallet goes dormant and fails to provide a proof-of-life ping within a specified timeframe, the assets are automatically and securely transferred to designated heirs.
+We move away from cold, complex crypto recovery processes. Our focus is on **warmth, continuity, and human connection** - making on-chain succession as seamless as a surprise gift for a loved one.
 
-## Background
+### Key Technologies
+* **Solana Native:** Built for speed, low fees, and scalability.
+* **100% Automated (MagicBlock Crank):** No manual claiming required. Background liveness checks run autonomously using MagicBlock infrastructure.
+* **Ultimate Privacy (TEE):** Built using Trusted Execution Environments to ensure that succession logic, asset amounts, and heir identities remain completely confidential.
 
-As digital asset ownership grows, a critical gap has emerged: **what happens to your crypto and your intentions when you can no longer manage them?** Traditional estate planning rarely covers bearer assets controlled by private keys, and leaving keys with a third party creates severe security and privacy risks. 
-
-At the same time, **confidential computing** has become a major focus in crypto infrastructure. Heres sits at this exact intersection: it acts as decentralized **death insurance**, utilizing **time-locked intent capsules** on Solana with **hardware-grade private execution** via Magicblock’s TEEs. Your “if I go silent” instructions are enforced automatically and privately, providing an institutional-grade digital succession layer..
-
----
-
-## Market Research & Trends
-
-### 1. The "Digital Graveyard" Epidemic
-- **Scale of the problem:** Every year, an estimated $2.1 Billion in digital assets is permanently lost because owners pass away without a secure succession plan. Cryptocurrencies are bearer assets: without proper automated execution, heirs cannot recover holdings.
-- **Implication for Heres:** We focus on **programmatic death insurance**: define conditions (e.g., heartbeat inactivity period, beneficiaries) once; execution is automatic when conditions are met, ensuring zero lost wealth.
-
-### 2. Decentralized Confidential Computing (DeCC) & TEEs
-- **TEE role:** Trusted Execution Environments (TEEs) provide hardware-enforced isolation so that conditions and data can be evaluated **in use** without exposing them on a public ledger.
-- **Implication for Heres:** We use Magicblock’s **PER (TEE)** so that inactivity checks and beneficiary logic run inside a trusted enclave. Absolute privacy while alive; transparent execution only upon death or permanent absence.
-
-### 3. The Flight to Stability in Estate Planning
-- **Stablecoin Adoption:** When planning for beneficiaries who may not be crypto-native, minimizing volatility is key. 
-- **Implication for Heres:** We prioritize major stablecoins (USDC, USDT, solAUDD) alongside blue-chip crypto, ensuring that the legacy left behind retains its real-world purchasing power.
-
----
-
-## Overview & Asset Roadmap
-
-**Heres** lets you create **Intent Capsules** on Solana. You deposit premium assets, set an **inactivity period**, assign **beneficiaries**, and securely attach encrypted **Intent Statements** via Chainlink. You delegate the capsule to Magicblock PER (TEE). Your **conditions stay completely private** inside the enclave; when you have been inactive long enough, **execution is automatic**.
-
-### Supported Assets Roadmap
-To ensure maximum flexibility for users, Heres Protocol is designed to support an expanding array of assets, from native tokens to wrapped assets and yield-bearing instruments.
-
-| Phase | Asset Category | Examples | Status |
-|-------|----------------|----------|--------|
-| **Phase 1** | Solana Assets | SOL, wallet-held classic SPL, Token-2022, standard Solana NFTs | Live on devnet |
-| **Phase 2** | Curated Mainnet Assets | USDC, USDT, wBTC, JitoSOL, mSOL | Upcoming |
-| **Phase 3** | Yield-Bearing & DeFi Assets | LP Tokens, Vault Shares | Roadmap |
-| **Phase 4** | Real World Assets (RWA) | Tokenized Treasuries, Real Estate | Roadmap. |
-
-### Technical Architecture
-| Layer | Technology | Role |
-|-------|------------|------|
-| **Settlement** | **Solana** | Persistent capsule state (owner, vault, inactivity, delegation), asset locking. |
-| **Private Sentinel** | **Magicblock PER (TEE)** | Hardware-isolated private monitoring of conditions; triggers the Crank when conditions are met. |
-| **Confidential Bridge** | **Chainlink CRE** | Secure off-chain delivery of encrypted Intent Statements to beneficiaries exactly where they need to go. |
-| **Monitoring** | **Alchemy** | Robust on-chain indexing and webhooks to ensure stable heartbeat tracking, subscription processing, and system liveliness. |
-
----
-
-## Problem
-
-1. **Digital Asset Succession:** Crypto is a bearer-asset. If you disappear, heirs cannot access your assets without complex technical knowledge.
-2. **Transparent Conditions:** Putting “if I don’t log in for X days, send Y to Z” on a public chain exposes your beneficiaries and wealth to surveillance and front-running risks.
-3. **The Web2 Gap:** Estates encompass sensitive Web2 credentials (passwords, 2FA codes) that cannot be safely stored on public networks.
-4. **Trust in Executors:** Relying on a person, lawyer, or centralized institution introduces severe counterparty risk, human error, and friction.
-
----
-
-## Solution
-
-Heres is an autonomous orchestration framework combining:
-
-1. **Persistent Capsules** – A PDA vault locks your assets securely on-chain.
-2. **Private Execution Logic** – Inactivity and beneficiary checks run inside Magicblock **PER (TEE)**, keeping conditions completely private off-chain until executed.
-3. **Confidential Delivery (Chainlink CRE)** – An encrypted off-chain *Intent Statement* is attached at creation. When the capsule activates, Chainlink CRE retrieves and delivers the decrypted statement directly to the beneficiary's email.
-4. **Protocol Insurance Fund (PIF)** – 50% of protocol revenue is directed to an on-chain SAFU fund, providing institutional-grade financial assurance against technical failures.
-
----
-
-## Key Features
-
-- **Zero Trust Executor (Code is Law):** No human intervention, lawyers, or third parties hold your keys. The smart contract acts as an uncompromising, immortal executor.
-- **Enclave-level Privacy:** Beneficiary addresses, trigger conditions, and asset distributions stay completely hidden inside the TEE while you are alive. Your financial privacy is never compromised.
-- **Off-chain Confidential Bridge:** Unique integration with Chainlink's isolated CRE allows us to securely decrypt and push Web2 secrets (emails, final letters) off-chain, bridging the gap between blockchain assets and real-world heirs.
-- **Absolute Owner Sovereignty (Heartbeat Override):** The creator can update their heartbeat, add or withdraw vault assets, and cancel an undelegated capsule before it fires. Beneficiary and NFT settlement rules become immutable when a new capsule is sealed.
-- **Multi-Asset Protection:** A fungible vault can hold SOL plus wallet-held classic SPL and compatible Token-2022 mints under one beneficiary split. Standard Solana NFTs use explicit per-mint recipients.
-- **Sealed Settlement Rules:** New capsules seal beneficiary shares and NFT assignments inside the TEE, then arm the liveness switch with a matching commitment so the payout configuration cannot change after activation.
-- **Self-Sustaining Protocol:** Designed with a hyper-sustainable subscription model that heavily funds a Protocol Insurance Fund (PIF) to protect users from unforeseen smart-contract vulnerabilities.
-
----
-
-## Business Model & Economics
-
-Heres Protocol operates on a highly sustainable and predictable revenue model designed to scale TVP (Total Value Protected):
-
-- **Capsule Limitation:** Each wallet manages **one current capsule**. After execution, distribution, intent delivery, and finalization close that lifecycle, the wallet can create a fresh capsule at the same addresses.
-- **Creation Fee:** The current repository default is **0.05 SOL** per capsule and remains configurable through the on-chain fee account.
-- **Planned Subscription Fee:** The product model targets a **$2 monthly subscription fee** to maintain the active heartbeat monitor; this branch does not add on-chain subscription enforcement.
-- **Planned 50% SAFU Allocation:** The product model directs half of protocol revenue to the **Protocol Insurance Fund (PIF)**.
-
----
-
-## User Flow & Architecture
-
-The following diagram illustrates the complete lifecycle of a Heres Intent Capsule, from creation to the autonomous delivery of assets and secrets upon permanent inactivity.
-
+## User Flow
 ```mermaid
 sequenceDiagram
-    participant U as User (Creator)
-    participant S as Solana Smart Contract
-    participant T as Magicblock PER (TEE)
-    participant C as Chainlink CRE
-    participant A as Alchemy
-    participant B as Beneficiary
-    
-    %% Setup Phase
-    rect rgba(59, 130, 246, 0.1)
-        Note over U, S: 1. Setup & Delegation
-        U->>S: Create Capsule, Deposit Assets (SOL, ETH, etc.)
-        U->>S: Attach Encrypted Intent Statement (Off-chain secrets)
-        U->>T: Delegate Monitoring & Conditions to TEE
-    end
-    
-    %% Active Phase
-    rect rgba(34, 197, 94, 0.1)
-        Note over U, A: 2. Active Lifecycle (Heartbeat)
-        loop Monthly Subscription ($2/mo)
-            U->>S: Ping "I am alive" (Update Last Activity)
-            A->>S: Index Activity & Verify Subscription Payment
-            S->>T: Refresh Activity Timestamp in Enclave
+    autonumber
+    actor Owner as Asset Owner
+    participant Vault as Heres Vault
+    participant Crank as MagicBlock Crank
+    participant TEE as TEE Continuity Engine
+    actor Heir as Designated Heir
+    Note over Owner, Vault: Phase 1: Deposit & Configuration
+    Owner->>Vault: Deposit Assets (RWA/Crypto) & Designate Heir
+    Owner->>Vault: Set Timelock Countdown (e.g., 6 months inactivity)
+    Note over Owner, Crank: Phase 2: Autonomous Liveness Monitoring
+    loop Continuous Background Check
+        Crank->>Owner: Monitor wallet activity / proof-of-life
+        alt Wallet active
+            Crank->>Vault: Reset timelock countdown
         end
     end
-    
-    %% Execution Phase
-    rect rgba(239, 68, 68, 0.1)
-        Note over U, B: 3. Silence & Autonomous Execution
-        Note right of U: User goes permanently silent (Death/Loss)
-        T->>T: Monitor Detects Inactivity > Threshold
-        T->>S: Trigger Decentralized Crank
-        
-        par On-chain Asset Transfer
-            S->>B: Distribute Locked Assets directly to Beneficiary Wallet
-        and Off-chain Secret Delivery
-            S->>C: Emit Execution Event
-            C->>C: Decrypt Intent Statement inside Chainlink CRE Enclave
-            C->>B: Deliver Email with Off-chain Secrets to Beneficiary
-        end
-    end
+    Note over Crank, Heir: Phase 3: Dormancy Trigger & Trustless Transfer
+    Crank->>TEE: Detect complete dormancy & timer expiration
+    TEE->>Vault: Verify conditions within enclave & authorize transfer
+    Vault->>Heir: Automated & private asset transfer
 ```
 
-The diagram is a product-level overview. The current devnet lifecycle creates an inactive draft, seals the private inheritance configuration in the TEE, arms the switch with its commitment, and finalizes the three core accounts only after every asset and enabled Intent Statement has settled.
+1. **Deposit & Lock:** Connect your Solana wallet and deposit assets (crypto or tokenized RWAs) into a secure Heres Vault.
+2. **Set Succession Rules:** Designate an heir's wallet address and configure a time-lock duration (e.g., 6 months or 1 year of inactivity).
+3. **Automated Monitoring:** MagicBlock Crank continuously monitors your wallet for proof-of-life activity in the background. As long as you remain active, the timer resets.
+4. **Dormancy Trigger:** If your wallet goes completely dormant and the specified time-lock expires, the continuity engine is triggered.
+5. **Trustless Transfer:** The Vault automatically and securely transfers your locked assets to your designated heir. No manual claims, no middlemen, and no exposed private keys.
 
----
+## Architecture & Features
 
-## Build & Deploy (Devnet)
+### 1. B2C Succession Vaults (Live on Devnet)
+End-users can create time-locked vaults to protect their assets. 
+* Currently integrated with demo assets from **Tessera** and **xStocks** to showcase succession for tokenized U.S. equities.
+* Intuitive, human-centric UI/UX designed to remove friction.
 
-Reference for rebuilding and redeploying the on-chain program (`heres_program`). These are the exact tools and versions used for the current devnet deployment.
+### 2. B2B Continuity SDK (Upcoming)
+An enterprise-grade SDK designed for Solana Treasuries, DAOs, and institutional custodians. 
+* Prevents TVL (Total Value Locked) leakage due to lost keys.
+* Plugs effortlessly into existing institutional workflows.
 
-### Toolchain
+## Roadmap
+- **Phase 1:** UI/UX Rebranding & Concept Validation (Completed)
+- **Phase 2:** Devnet Launch & MagicBlock Crank Integration (Completed)
+- **Phase 3:** Token-2022 Full Integration (Supporting advanced asset types like TBILLx) (Current)
+- **Phase 4:** Mainnet Launch & B2B SDK Rollout
+- **Phase 5:** Institutional Pilot Partnerships
 
-| Tool | Version | Notes |
-|------|---------|-------|
-| Solana CLI (Agave) | `4.0.3` | `solana --version` |
-| `cargo-build-sbf` | `4.0.0` | Ships with Agave 4.0.3. |
-| Anchor CLI | `0.32.1` | Match the program crate and generated IDL. |
+## Community & Links
 
-Program crate dependencies (`programs/heres_program/Cargo.toml`):
+* **Website:** [heresprotocol.com]
+* **Twitter/X:** [@HeresProtocol]
+* **Linkedin:** [https://www.linkedin.com/company/heres-protocol/]
 
-| Crate | Version | Features |
-|-------|---------|----------|
-| `anchor-lang` | `0.32.1` | `init-if-needed` |
-| `anchor-spl` | `0.32.1` | `token_2022` |
-| `ephemeral-rollups-sdk` | `0.14.4` | `anchor-compat`, `access-control` |
-| `magicblock-magic-program-api` | `0.10.1` | `backward-compat` |
-| `bincode` | `1.3` | |
-
-### Build
-
-Build the program and regenerate its IDL with Anchor CLI 0.32.1:
-
-```bash
-cd heres_program
-avm use 0.32.1
-anchor build
-# -> target/deploy/heres_program.so
-# -> target/idl/heres_program.json
-```
-
-The 2026-09-25 Devnet upgrade used the Anchor 0.32.1 build (ELF flags `0x0`) and passed live program, Token-2022, and ER/TEE checks. Copy the generated IDL into the web app's `idl/heres_program.json` before releasing the matching client.
-
-### Deploy (in-place upgrade)
-
-```bash
-solana program deploy heres_program/target/deploy/heres_program.so \
-  --program-id sDRdG2qt6MKDB5Byfx7oqQLnZTDa32k1qM3hDSBmQUz \
-  --upgrade-authority <UPGRADE_AUTHORITY_KEYPAIR> \
-  --fee-payer <DEVNET_FEE_PAYER_KEYPAIR> \
-  --url https://api.devnet.solana.com \
-  --with-compute-unit-price 50000 --max-sign-attempts 1000
-```
-
-Program ID (devnet): `sDRdG2qt6MKDB5Byfx7oqQLnZTDa32k1qM3hDSBmQUz`
-
-### Gotcha: do not build v3 with platform-tools v1.53
-
-An earlier `v1.53 --arch v3` binary passed loader verification but crashed on every instruction at runtime (`Access violation in unknown section ...`, about 44 compute units). If building v3 explicitly, use `--tools-version v1.54`. After deployment, dump the program and compare its first `stat -c %s local.so` bytes with the local binary. The on-chain dump includes trailing padding, so whole-file hashes can differ despite identical deployed code.
-
-### Notes
-
-- The 2026-09-25 Devnet upgrade accepted the Anchor-built `0x0` binary and executed it successfully. Do not assume an older SBPF version restriction still applies without a fresh deployment check.
-- If a deploy fails, close the orphan buffer before retrying so its rent is reclaimed: `solana program close <BUFFER_ADDRESS> --authority <AUTH> --recipient <AUTH>`.
-
----
-
-## Documentation
-
-- [Architecture and smart contract reference](ARCHITECTURE.md)
-- [GitBook documentation](gitbook/SUMMARY.md)
-- [Chainlink CRE integration notes](CRE_README.md)
-- [Program test strategy](heres_program/tests/README.md)
-- [MagicBlock live-devnet verification](scripts/magicblock/README.md)
-- [Android MVP setup](mobile-android/README.md)
-- [Project-local Solana security review registration](.agents/skills/solana-security-review/SKILL.md)
-- [Vendored Chainlink CCIP Solana SDK reference](vendor/ccip-svm/README.md)
+*Heres Protocol is proudly participating in the Colosseum Hackathon. We are a bootstrapped team currently seeking 1.5M in Seed funding to build the definitive safety net for the Internet Capital Markets.*
