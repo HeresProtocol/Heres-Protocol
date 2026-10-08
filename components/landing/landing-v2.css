@@ -1575,6 +1575,7 @@ body:has(.hr-site) { overflow-x: clip; }
 @keyframes hr-float-2 { 50% { transform: translate(-12px, 10px) rotate(-0.9deg); } }
 @keyframes hr-float-3 { 50% { transform: translate(8px, 11px) rotate(0.6deg); } }
 @keyframes hr-float-4 { 50% { transform: translate(-9px, -9px) rotate(-0.7deg); } }
+.hr-art-idle .hr-art-float { animation-play-state: paused; }
 @media (prefers-reduced-motion: reduce) {
   .hr-art-float { animation: none; }
   .hr-art path[data-draw] { stroke-dashoffset: 0; }
@@ -1583,8 +1584,20 @@ body:has(.hr-site) { overflow-x: clip; }
 /* Hero: one artwork split at the photo's bottom edge; LandingRibbons sizes both layers from the
    photo's real crop. The CSS here is the no-JS fallback (desktop 1:1 geometry). */
 .hr-hero-bg-wrap .hr-art-hero { z-index: 1; left: -19.97%; top: 43.13%; width: 118.72%; height: 56.87%; }
-.hr-hero-transition { height: calc(min(100vw, 1512px) * 216 / 1512); z-index: 4; }
 .hr-hero-transition .hr-art-hero { left: -19.97%; top: 0; width: 118.72%; height: calc(100% - 12px); }
+/* Hidden until LandingRibbons has fitted it to the photo's real crop, then faded in, so the loops
+   never appear in a provisional spot and jump (the fallback geometry above is for no-JS only). */
+.hr-art-hero { visibility: hidden; opacity: 0; transition: opacity 0.5s ease; }
+.hr-art-hero[data-placed] { visibility: visible; opacity: 1; }
+/* The band's height before the script runs equals what the script sets (artwork scale x 204 + 12px),
+   so nothing below the hero moves when it does. Scale = the photo's cover scale for each layout. */
+.hr-hero-transition { height: calc(min(100vw, 1512px) * 204 / 1512 + 12px); z-index: 4; }
+@media (max-width: 1023px) {
+  .hr-hero-transition { height: calc(max(100vw * 204 / 1512, min(100vw * 2 / 3, 640px) * 204 / 976) + 12px); }
+}
+@media (max-width: 520px) {
+  .hr-hero-transition { height: calc(max(100vw * 204 / 1512, min(100vw * 5 / 4, 640px) * 204 / 976) + 12px); }
+}
 
 /* How it works: the band under the steps (figures + ribbon), artwork offset (-24, -82). */
 .hr-steps-ribbon-bar { aspect-ratio: 1512 / 368; }

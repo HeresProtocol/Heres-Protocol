@@ -75,7 +75,9 @@ function placeHero() {
     width: `${1795 * s}px`,
     height: `${(759 - HERO_SPLIT) * s}px`,
   })
-  band.style.height = `${Math.ceil(top + (759 - HERO_SPLIT) * s + 12)}px`
+  band.style.height = `${top + (759 - HERO_SPLIT) * s + 12}px` // same formula as the CSS fallback
+  photo.dataset.placed = ''
+  bandLayer.dataset.placed = ''
 }
 
 function setLineWeights() {
@@ -147,6 +149,13 @@ export function LandingRibbons() {
     window.addEventListener('resize', onResize, { passive: true })
     const ro = new ResizeObserver(() => onResize())
     document.querySelectorAll('.hr-hero, .hr-hero-transition').forEach((el) => ro.observe(el))
+    // Floating loops only animate while on screen, so off-screen artwork costs nothing while scrolling.
+    const io = new IntersectionObserver((entries) => {
+      for (const e of entries) e.target.classList.toggle('hr-art-idle', !e.isIntersecting)
+    })
+    document.querySelectorAll('svg.hr-art').forEach((svg) => {
+      if (svg.querySelector('.hr-art-float')) io.observe(svg)
+    })
 
     return () => {
       timers.forEach((t) => window.clearTimeout(t))
@@ -155,6 +164,7 @@ export function LandingRibbons() {
       window.removeEventListener('resize', onResize)
       img?.removeEventListener('load', layout)
       ro.disconnect()
+      io.disconnect()
     }
   }, [])
 

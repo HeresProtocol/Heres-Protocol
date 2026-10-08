@@ -139,7 +139,7 @@ export default async function HomePage() {
       <main>
         <LandingRibbons />
         <noscript>
-          <style>{'.hr-art path[data-draw]{stroke-dashoffset:0!important}'}</style>
+          <style>{'.hr-art path[data-draw]{stroke-dashoffset:0!important}.hr-art-hero{visibility:visible;opacity:1}'}</style>
         </noscript>
         {/* HERO SECTION */}
         <section className="hr-hero" aria-labelledby="hr-hero-title">
