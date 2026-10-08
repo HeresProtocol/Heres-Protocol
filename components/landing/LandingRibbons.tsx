@@ -21,6 +21,7 @@ const HERO_SPLIT = 555 // artwork y where the hero photo ends (976 - 421)
 const HERO_X = -302
 const HERO_Y = 421
 const FIGURE_X = 666 // centre of the figure holding the ribbon, artwork x
+const BAND_LEAD = 900 // the band layer's window starts this far left of the artwork, for the lead-out
 
 const LOAD_DELAY = 1200
 const LOAD_STEP = 2600
@@ -70,9 +71,9 @@ function placeHero() {
   const left = continuous ? box.left - b.left + HERO_X * s : b.width * 0.3 - FIGURE_X * s
   const top = continuous ? Math.max(0, box.bottom - b.top) : 0
   Object.assign(bandLayer.style, {
-    left: `${left}px`,
+    left: `${left - BAND_LEAD * s}px`,
     top: `${top}px`,
-    width: `${1795 * s}px`,
+    width: `${(1795 + BAND_LEAD) * s}px`,
     height: `${(759 - HERO_SPLIT) * s}px`,
   })
   band.style.height = `${top + (759 - HERO_SPLIT) * s + 12}px` // same formula as the CSS fallback
@@ -93,34 +94,55 @@ function setLineWeights() {
 export function LandingRibbons() {
   useEffect(() => {
     const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches
-    const loadLines = Array.from(document.querySelectorAll<SVGPathElement>('path[data-draw="load"]'))
-    const scrollLines = Array.from(document.querySelectorAll<SVGPathElement>('path[data-draw="scroll"]'))
     const timers: number[] = []
     let raf = 0
+
+    // Each drawn line, with the lead-in / lead-out that continue it past the screen edge. Progress
+    // runs -a..0 for the lead-in, 0..1 for the line itself and 1..1+b for the lead-out, where a and b
+    // are the extensions' lengths relative to the line, so the tip moves at one speed throughout.
+    type Line = { path: SVGPathElement; lead?: SVGPathElement; tail?: SVGPathElement; a: number; b: number }
+    const lines = (mode: string): Line[] =>
+      Array.from(document.querySelectorAll<SVGPathElement>(`path[data-draw="${mode}"][data-line]`)).map((path) => {
+        const svg = path.ownerSVGElement!
+        const ext = (side: string) =>
+          svg.querySelector<SVGPathElement>(`path[data-ext="${side}"][data-of="${path.dataset.line}"]`) ?? undefined
+        const lead = ext('start')
+        const tail = ext('end')
+        const len = path.getTotalLength() || 1
+        return { path, lead, tail, a: lead ? lead.getTotalLength() / len : 0, b: tail ? tail.getTotalLength() / len : 0 }
+      })
+    const loadLines = lines('load')
+    const scrollLines = lines('scroll')
 
     const layout = () => {
       placeHero()
       setLineWeights()
     }
 
-    const show = (path: SVGPathElement, progress: number) => {
-      path.style.strokeDashoffset = String(1 - progress)
-      path.style.opacity = progress > 0.002 ? '1' : '0' // hide the round cap's dot before the line starts
+    const show = (path: SVGPathElement | undefined, progress: number) => {
+      if (!path) return
+      const p = Math.min(1, Math.max(0, progress))
+      path.style.strokeDashoffset = String(1 - p)
+      path.style.opacity = p > 0.002 ? '1' : '0' // hide the round cap's dot before the line starts
+    }
+    const showLine = (l: Line, r: number) => {
+      show(l.lead, l.a ? (r + l.a) / l.a : 1)
+      show(l.path, r)
+      show(l.tail, l.b ? (r - 1) / l.b : 0)
     }
 
     const drawOnScroll = () => {
       raf = 0
       const vh = window.innerHeight
       const scrollLeft = Math.max(0, document.documentElement.scrollHeight - vh - window.scrollY)
-      for (const path of scrollLines) {
-        const rect = path.getBoundingClientRect()
-        const pace = Number(path.dataset.pace) || 0.4
+      for (const l of scrollLines) {
+        const rect = l.path.getBoundingClientRect()
+        const pace = Number(l.path.dataset.pace) || 0.4
         const span = rect.height + vh * pace
         // Near the end of the page there may not be enough scroll left to finish the line, so the
         // pace is stretched to make it complete exactly at the bottom of the page.
         const atEnd = (vh - (rect.top - scrollLeft)) / span
-        const progress = ((vh - rect.top) / span) / Math.min(1, Math.max(atEnd, 0.01))
-        show(path, Math.min(1, Math.max(0, progress)))
+        showLine(l, ((vh - rect.top) / span) / Math.min(1, Math.max(atEnd, 0.01)))
       }
     }
     const onScroll = () => { if (!raf) raf = requestAnimationFrame(drawOnScroll) }
@@ -128,17 +150,22 @@ export function LandingRibbons() {
 
     layout()
     if (reduce) {
-      ;[...loadLines, ...scrollLines].forEach((p) => show(p, 1))
+      ;[...loadLines, ...scrollLines].forEach((l) => [l.lead, l.path, l.tail].forEach((p) => show(p, 1)))
     } else {
-      // Hero: the sweep draws first, then the line leaving to the left (timings from the prototype).
-      loadLines.forEach((p) => show(p, 0))
-      for (const order of [1, 2]) {
+      // Hero: the sweep draws first, then the line leaving to the left (timings from the prototype);
+      // its lead-out carries on past the screen edge once the line itself has finished.
+      loadLines.forEach((l) => showLine(l, 0))
+      const play = (p: SVGPathElement | undefined, at: number, ms: number, ease: string) => {
+        if (!p) return
         timers.push(window.setTimeout(() => {
-          loadLines.filter((p) => p.dataset.order === String(order)).forEach((p) => {
-            p.style.transition = `stroke-dashoffset ${LOAD_STEP}ms ${LOAD_EASE}`
-            show(p, 1)
-          })
-        }, LOAD_DELAY + (order - 1) * LOAD_STEP))
+          p.style.transition = `stroke-dashoffset ${ms}ms ${ease}`
+          show(p, 1)
+        }, at))
+      }
+      for (const l of loadLines) {
+        const start = LOAD_DELAY + (Number(l.path.dataset.order) - 1) * LOAD_STEP
+        play(l.path, start, LOAD_STEP, LOAD_EASE)
+        play(l.tail, start + LOAD_STEP * 0.9, LOAD_STEP * l.b, 'cubic-bezier(0.3, 0.6, 0.4, 1)')
       }
       drawOnScroll()
       window.addEventListener('scroll', onScroll, { passive: true })

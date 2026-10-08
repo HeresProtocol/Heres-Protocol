@@ -44,8 +44,24 @@ export function RibbonArt({ art, className, window: win, draw = 'none', pace = 0
               d={p.d}
               pathLength={1}
               data-draw={draw === 'none' ? undefined : draw}
+              data-line={p.id}
               data-order={draw === 'load' ? order : undefined}
               data-pace={draw === 'scroll' ? pace : undefined}
+            />
+          )
+        }
+        if (p.role === 'ext') {
+          // Continuation of a line past its open end; LandingRibbons draws it right after (or, for a
+          // lead-in, right before) the line it belongs to.
+          return (
+            <path
+              key={i}
+              className="hr-art-line"
+              d={p.d}
+              pathLength={1}
+              data-draw={draw === 'none' ? undefined : draw}
+              data-ext={p.side}
+              data-of={p.of}
             />
           )
         }

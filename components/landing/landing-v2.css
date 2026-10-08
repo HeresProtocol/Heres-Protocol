@@ -761,11 +761,6 @@
     bottom: 0;
   }
 }
-.hr-privacy-visual-img {
-  width: 100%;
-  height: auto;
-  display: block;
-}
 @media (max-width: 768px) {
   .hr-privacy-copy { width: 100%; min-width: 0; }
   .hr-privacy-badges-row { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 24px 16px; }
@@ -1091,7 +1086,6 @@ body:has(.hr-site) { overflow-x: clip; }
 /* CONTINUOUS SEAMLESS RIBBON CHAINS (Hero -> Transition, and Privacy -> Audience -> Close)
    Locks the continuous red threads precisely to Figma coordinates,
    preventing dynamic scroll translation and responsive variance from tearing seams apart. */
-.hr-privacy-visual-img,
 .hr-audience-thread-wrap .hr-thread-img,
 .hr-close-thread-wrap .hr-thread-img {
   translate: none !important;
@@ -1515,7 +1509,6 @@ body:has(.hr-site) { overflow-x: clip; }
     overflow: hidden;
     right: max(var(--hr-page-gutter), calc((100vw - var(--hr-container-max)) / 2));
   }
-  .hr-privacy-visual-wrap .hr-privacy-visual-img { width: 520px; max-width: none; height: auto; margin: -37px 0 0 -39px; }
 }
 /* Tablet portrait: the figures sit below the copy, on the right margin. */
 @media (min-width: 600px) and (max-width: 768px) {
@@ -1524,7 +1517,6 @@ body:has(.hr-site) { overflow-x: clip; }
 /* Phones: smaller (box 160x268 = scale 0.559) and centred. */
 @media (max-width: 599px) {
   .hr-privacy-visual-wrap { position: relative; right: auto; bottom: auto; width: 160px; height: 268px; margin: 32px auto 0; }
-  .hr-privacy-visual-wrap .hr-privacy-visual-img { width: 416px; margin: -30px 0 0 -31px; }
 }
 
 /* PAGE NOT FOUND */
@@ -1584,10 +1576,12 @@ body:has(.hr-site) { overflow-x: clip; }
 /* Hero: one artwork split at the photo's bottom edge; LandingRibbons sizes both layers from the
    photo's real crop. The CSS here is the no-JS fallback (desktop 1:1 geometry). */
 .hr-hero-bg-wrap .hr-art-hero { z-index: 1; left: -19.97%; top: 43.13%; width: 118.72%; height: 56.87%; }
-.hr-hero-transition .hr-art-hero { left: -19.97%; top: 0; width: 118.72%; height: calc(100% - 12px); }
+.hr-hero-transition .hr-art-hero { left: calc(-1202 / 1512 * 100%); top: 0; width: calc(2695 / 1512 * 100%); height: calc(100% - 12px); }
 /* Hidden until LandingRibbons has fitted it to the photo's real crop, then faded in, so the loops
    never appear in a provisional spot and jump (the fallback geometry above is for no-JS only). */
-.hr-art-hero { visibility: hidden; opacity: 0; transition: opacity 0.5s ease; }
+/* Each hero layer shows only its own slice of the artwork (photo part / band part); without the
+   clip, each layer would also paint the other's lines and the ribbon would appear twice. */
+.hr-art-hero { overflow: hidden; visibility: hidden; opacity: 0; transition: opacity 0.5s ease; }
 .hr-art-hero[data-placed] { visibility: visible; opacity: 1; }
 /* The band's height before the script runs equals what the script sets (artwork scale x 204 + 12px),
    so nothing below the hero moves when it does. Scale = the photo's cover scale for each layout. */
@@ -1599,8 +1593,9 @@ body:has(.hr-site) { overflow-x: clip; }
   .hr-hero-transition { height: calc(max(100vw * 204 / 1512, min(100vw * 5 / 4, 640px) * 204 / 976) + 12px); }
 }
 
-/* How it works: the band under the steps (figures + ribbon), artwork offset (-24, -82). */
-.hr-steps-ribbon-bar { aspect-ratio: 1512 / 368; }
+/* How it works: the band under the steps (figures + ribbon), artwork offset (-24, -82). It keeps
+   growing up to 1920px so the ribbon still enters from the screen edge on wide monitors. */
+.hr-steps-ribbon-bar { aspect-ratio: 1512 / 368; max-width: 1920px; }
 .hr-art-how {
   left: calc(-24 / 1512 * 100%);
   top: calc(-82 / 368 * 100%);
@@ -1624,8 +1619,18 @@ body:has(.hr-site) { overflow-x: clip; }
     height: 1770px;
     z-index: 1;
   }
-  .hr-privacy-visual-img { visibility: hidden; }
   .hr-audience-thread-wrap, .hr-close-thread-wrap { display: none; }
+}
+
+/* Below 1200px the couple frame shows the same artwork, and the ribbon around it is clipped at the
+   section's edges so it enters from the screen edge and slips behind "Who it's for". */
+.hr-art-people-compact { left: 0; top: 0; width: 100%; height: 100%; }
+@media (min-width: 1200px) {
+  .hr-art-people-compact { display: none; }
+}
+@media (max-width: 1199px) {
+  .hr-privacy-wrap { overflow: hidden; overflow: clip; }
+  .hr-privacy-visual-wrap { overflow: visible; }
 }
 
 /* Because what matters: the loose threads on the beach photo, artwork at (0, 170) of 552x725. */
@@ -1633,6 +1638,11 @@ body:has(.hr-site) { overflow-x: clip; }
 
 /* Decide: the dog walker is part of the artwork; its figure fills the old 132x211 box. */
 .hr-final-dog-walker { aspect-ratio: 132 / 211; }
+/* Stacked layout (<= 860px): the walker sits under the call to action, so leave room for the
+   ribbon's high curve to pass below the text instead of through it. */
+@media (max-width: 860px) {
+  .hr-final-dog-walker { margin-top: clamp(120px, 28vw, 220px); }
+}
 .hr-art-decide {
   left: 0;
   top: calc(-624 / 211 * 100%);

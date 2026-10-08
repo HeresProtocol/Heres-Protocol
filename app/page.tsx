@@ -94,7 +94,6 @@ const heroImage = {
   sizes: '(max-width: 1512px) 100vw, 1512px',
 } as const
 const { props: heroClean } = getImageProps({ ...heroImage, src: '/figma/hero-wide-bg-clean.png' })
-const { props: privacyClean } = getImageProps({ alt: '', width: 372, height: 463, sizes: '372px', src: '/figma/figures/privacy-couple-clean@2x.png' })
 
 // Re-render the static page every 5 minutes so the protocol totals baked into it stay current.
 export const revalidate = 300
@@ -176,7 +175,7 @@ export default async function HomePage() {
 
         {/* HERO TO MISSION TRANSITION: SILHOUETTE & CONTINUOUS RED RIBBON */}
         <div className="hr-hero-transition" aria-hidden="true">
-          <RibbonArt art="header" window={[0, 555, 1795, 204]} draw="load" layer="hero-band" className="hr-art-hero" />
+          <RibbonArt art="header" window={[-900, 555, 2695, 204]} draw="load" layer="hero-band" className="hr-art-hero" />
         </div>
 
         {/* MISSION SECTION */}
@@ -349,8 +348,9 @@ export default async function HomePage() {
           </div>
 
           <div className="hr-privacy-visual-wrap" aria-hidden="true">
-            {/* eslint-disable-next-line jsx-a11y/alt-text -- decorative; alt="" comes from getImageProps */}
-            <img {...privacyClean} className="hr-privacy-visual-img" />
+            {/* < 1200px: the same couple and ribbon, framed on the couple (artwork region 1188,195.5
+                143x240); the ribbon runs on past the frame and slips behind "Who it's for". */}
+            <RibbonArt art="people" window={[1188, 195.5, 143, 240]} draw="scroll" pace={0.4} className="hr-art-people-compact" />
           </div>
           {/* >= 1200px: the couple and one continuous ribbon down through "Who it's for" (live artwork). */}
           <RibbonArt art="people" draw="scroll" pace={0.4} className="hr-art-people" />
