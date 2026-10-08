@@ -1,12 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getDashboardSnapshot } from '@/lib/dashboard'
 import { verifyAdminRequest } from '@/lib/admin-auth'
+import { getSessionWallet } from '@/lib/siwx/server'
 
 export async function GET(request: NextRequest) {
   try {
     // Admin-gated: returns every owner's capsule (the explorer feed). Public
     // aggregate stats are served unauthenticated by /api/capsules/summary.
-    const auth = verifyAdminRequest(request.headers)
+    const auth = verifyAdminRequest(request.headers, await getSessionWallet(request))
     if (!auth.ok) {
       return NextResponse.json({ error: auth.error }, { status: auth.status })
     }
