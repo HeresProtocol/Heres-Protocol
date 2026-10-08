@@ -3,6 +3,7 @@ import { PublicKey } from '@solana/web3.js'
 import { getDeliveryStatus } from '@/lib/intent-delivery/service'
 import { verifyIntentSignedRequest } from '@/lib/intent-delivery/auth'
 import { fetchCapsuleStateByAddress } from '@/lib/intent-delivery/solana'
+import { getSessionWallet } from '@/lib/siwx/server'
 
 export async function GET(request: NextRequest) {
   const capsuleAddress = request.nextUrl.searchParams.get('capsule')?.trim()
@@ -12,8 +13,8 @@ export async function GET(request: NextRequest) {
   if (!capsuleAddress) {
     return NextResponse.json({ error: 'capsule query parameter is required' }, { status: 400 })
   }
-  if (!owner || !signature || !Number.isFinite(timestamp)) {
-    return NextResponse.json({ error: 'owner, timestamp, x-intent-signature are required' }, { status: 400 })
+  if (!owner) {
+    return NextResponse.json({ error: 'owner query parameter is required' }, { status: 400 })
   }
 
   let capsulePubkey: PublicKey
@@ -33,15 +34,25 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
   }
 
-  const isValidSignature = verifyIntentSignedRequest({
-    action: 'delivery-status',
-    owner,
-    capsuleAddress,
-    timestamp,
-    signatureBase64: signature,
-  })
-  if (!isValidSignature) {
-    return NextResponse.json({ error: 'Invalid or expired signature' }, { status: 401 })
+  // An owner signed in with SIWX (one wallet signature a day) needs no per-request signature.
+  const sessionWallet = await getSessionWallet(request)
+  if (sessionWallet !== ownerPubkey.toBase58()) {
+    if (!signature || !Number.isFinite(timestamp)) {
+      return NextResponse.json(
+        { error: 'Sign in with the owner wallet, or send timestamp and x-intent-signature' },
+        { status: 401 }
+      )
+    }
+    const isValidSignature = verifyIntentSignedRequest({
+      action: 'delivery-status',
+      owner,
+      capsuleAddress,
+      timestamp,
+      signatureBase64: signature,
+    })
+    if (!isValidSignature) {
+      return NextResponse.json({ error: 'Invalid or expired signature' }, { status: 401 })
+    }
   }
 
   const entries = await getDeliveryStatus(capsuleAddress)

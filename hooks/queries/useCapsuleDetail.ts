@@ -4,13 +4,12 @@ import { useCallback } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { PublicKey } from '@solana/web3.js'
 import { useHeresWallet } from '@/hooks/useHeresWallet'
+import { useSiwxSession } from '@/hooks/useSiwxSession'
 import { getCapsuleAccountLocations, getCapsuleByAddress } from '@/lib/solana'
 import { getCachedTeeToken } from '@/lib/tee'
 import { getCapsuleVaultPDA } from '@/lib/program'
 import { getVaultTokenAccounts, type VaultTokenAccount } from '@/lib/spl'
 import { getSolanaConnection } from '@/config/solana'
-import { buildIntentSignedMessage } from '@/utils/intentAuth'
-import { bytesToBase64 } from '@/utils/intentClient'
 import { queryKeys } from '@/lib/query/keys'
 import {
   areCapsuleAccountsOnBase,
@@ -126,6 +125,7 @@ export function useCapsuleDetail({
   address,
 }: UseCapsuleDetailOptions): UseCapsuleDetail {
   const wallet = useHeresWallet()
+  const { ensureSession } = useSiwxSession(wallet)
   const queryClient = useQueryClient()
 
   // -------------------------------------------------------------------------
@@ -283,9 +283,8 @@ export function useCapsuleDetail({
 
   // -------------------------------------------------------------------------
   // 5. Intent delivery status (Effect 5 equivalent)
-  //    Owner-gated + signMessage-gated. sessionStorage 4-min signature cache
-  //    is preserved verbatim inside the queryFn to prevent repeat prompts.
-  //    staleTime mirrors the cache TTL so we do not prompt again mid-session.
+  //    Owner-gated + signMessage-gated. The owner signs in once with SIWX
+  //    (valid 24h, HttpOnly cookie), so refetches never prompt the wallet.
   // -------------------------------------------------------------------------
   const capsuleAddress = capsule?.capsuleAddress
   const intentDeliveryEnabled =
@@ -299,54 +298,18 @@ export function useCapsuleDetail({
   const intentDeliveryQuery = useQuery({
     queryKey: queryKeys.capsule.intentDelivery(address ?? ''),
     enabled: intentDeliveryEnabled,
-    staleTime: 4 * 60 * 1000, // matches the 4-min sessionStorage TTL
+    staleTime: 60 * 1000,
     retry: 0,
     queryFn: async (): Promise<IntentDeliveryStatus> => {
       const walletPublicKey = wallet.publicKey
-      const signMessage = wallet.signMessage
-      if (!capsuleAddress || !walletPublicKey || !signMessage) return null
+      if (!capsuleAddress || !walletPublicKey) return null
 
-      const owner = walletPublicKey.toBase58()
-      const cacheKey = `cre-status-auth:${capsuleAddress}:${owner}`
-      let timestamp = 0
-      let signature = ''
-
-      try {
-        const cachedRaw = sessionStorage.getItem(cacheKey)
-        if (cachedRaw) {
-          const cached = JSON.parse(cachedRaw) as { timestamp?: number; signature?: string }
-          if (typeof cached.timestamp === 'number' && typeof cached.signature === 'string') {
-            const ageMs = Date.now() - cached.timestamp
-            if (ageMs >= 0 && ageMs < 4 * 60 * 1000) {
-              timestamp = cached.timestamp
-              signature = cached.signature
-            }
-          }
-        }
-      } catch {
-        // Ignore cache parse failures and request a fresh signature.
-      }
-
-      if (!signature) {
-        timestamp = Date.now()
-        const message = buildIntentSignedMessage({
-          action: 'delivery-status',
-          owner,
-          capsuleAddress,
-          timestamp,
-        })
-        signature = bytesToBase64(await signMessage(new TextEncoder().encode(message)))
-        sessionStorage.setItem(cacheKey, JSON.stringify({ timestamp, signature }))
-      }
-
+      await ensureSession()
       const params = new URLSearchParams({
         capsule: capsuleAddress,
-        owner,
-        timestamp: String(timestamp),
+        owner: walletPublicKey.toBase58(),
       })
-      const res = await fetch(`/api/intent-delivery/status?${params.toString()}`, {
-        headers: { 'x-intent-signature': signature },
-      })
+      const res = await fetch(`/api/intent-delivery/status?${params.toString()}`, { cache: 'no-store' })
       const data = await res.json()
       if (!res.ok) {
         throw new Error(data?.error || 'Failed to fetch Intent Statement delivery status')
