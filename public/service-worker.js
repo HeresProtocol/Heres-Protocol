@@ -1,52 +1,14 @@
-const CACHE_NAME = 'heres-cache-v2';
-const urlsToCache = [
-  '/manifest.json',
-  '/logo-white.png',
-  '/logo-black.png',
-  '/favicon.svg',
-  '/logos/solana.svg',
-  '/logos/phantom.svg',
-  '/logos/helius.svg',
-  '/logos/backpack.png',
-  '/logos/magicblock.svg'
-];
-
-self.addEventListener('install', (event) => {
-  self.skipWaiting();
-  event.waitUntil(
-    caches.open(CACHE_NAME)
-      .then((cache) => cache.addAll(urlsToCache))
-  );
-});
+// Retired. Earlier versions of the site registered a caching service worker; this replacement
+// exists only so browsers that still have it installed pick up this update, clear every cache
+// it created, unregister it, and reload open tabs from the network (the current site).
+self.addEventListener('install', () => self.skipWaiting())
 
 self.addEventListener('activate', (event) => {
-  event.waitUntil(self.clients.claim());
-});
-
-self.addEventListener('fetch', (event) => {
-  const url = new URL(event.request.url);
-  const isDocument = event.request.mode === 'navigate' || event.request.destination === 'document';
-  const isNextData = url.pathname.startsWith('/_next') || url.searchParams.has('rsc');
-  if (isDocument || isNextData) {
-    event.respondWith(fetch(event.request));
-    return;
-  }
-  event.respondWith(
-    caches.match(event.request).then((response) => response || fetch(event.request))
-  );
-});
-
-self.addEventListener('activate', (event) => {
-  const cacheWhitelist = [CACHE_NAME];
-  event.waitUntil(
-    caches.keys().then((cacheNames) => {
-      return Promise.all(
-        cacheNames.map((cacheName) => {
-          if (cacheWhitelist.indexOf(cacheName) === -1) {
-            return caches.delete(cacheName);
-          }
-        })
-      );
-    })
-  );
-});
+  event.waitUntil((async () => {
+    const keys = await caches.keys()
+    await Promise.all(keys.map((key) => caches.delete(key)))
+    await self.registration.unregister()
+    const windows = await self.clients.matchAll({ type: 'window' })
+    windows.forEach((client) => client.navigate(client.url))
+  })())
+})

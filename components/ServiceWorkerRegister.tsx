@@ -2,19 +2,21 @@
 
 import { useEffect } from 'react';
 
+/**
+ * The site no longer uses a service worker. Remove any worker and cache left behind by earlier
+ * versions so returning visitors never see stale pages or assets from the old frontend.
+ */
 export function ServiceWorkerRegister() {
     useEffect(() => {
         if ('serviceWorker' in navigator) {
-            window.addEventListener('load', () => {
-                navigator.serviceWorker.register('/service-worker.js').then(
-                    (registration) => {
-                        console.log('ServiceWorker registration successful with scope: ', registration.scope);
-                    },
-                    (err) => {
-                        console.log('ServiceWorker registration failed: ', err);
-                    }
-                );
-            });
+            navigator.serviceWorker.getRegistrations()
+                .then((registrations) => registrations.forEach((registration) => registration.unregister()))
+                .catch(() => {});
+        }
+        if ('caches' in window) {
+            caches.keys()
+                .then((keys) => keys.forEach((key) => caches.delete(key)))
+                .catch(() => {});
         }
     }, []);
 

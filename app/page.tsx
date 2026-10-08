@@ -8,7 +8,19 @@ import { LandingRouteWarmup } from '@/components/landing/LandingRouteWarmup'
 import { LegacyCard } from '@/components/landing/LegacyCard'
 import { getHeroStats } from '@/lib/landing-stats'
 import { ThreadRibbon } from '@/components/landing/ThreadRibbon'
+import { RibbonArt } from '@/components/landing/RibbonArt'
+import { LandingRibbons } from '@/components/landing/LandingRibbons'
+import { Roboto } from 'next/font/google'
 import '@/components/landing/landing-v2.css'
+
+// The live "Protected on Heres" card is set in Roboto (per the design), the same font files as the
+// capsule builder, so it looks identical on every device instead of falling back to each system font.
+const roboto = Roboto({
+  subsets: ['latin'],
+  weight: ['400', '500', '600', '700'],
+  variable: '--font-roboto',
+  display: 'swap',
+})
 
 export const metadata: Metadata = {
   title: { absolute: 'Heres — Leave something that lives on' },
@@ -81,11 +93,7 @@ const heroImage = {
   priority: true,
   sizes: '(max-width: 1512px) 100vw, 1512px',
 } as const
-const { props: heroWide } = getImageProps({ ...heroImage, src: '/figma/hero-wide-bg.png' })
 const { props: heroClean } = getImageProps({ ...heroImage, src: '/figma/hero-wide-bg-clean.png' })
-const privacyImage = { alt: '', width: 372, height: 463, sizes: '372px' } as const
-const { props: privacyRibbon } = getImageProps({ ...privacyImage, src: '/figma/figures/privacy-couple-ribbon@2x.png' })
-const { props: privacyClean } = getImageProps({ ...privacyImage, src: '/figma/figures/privacy-couple-clean@2x.png' })
 
 // Re-render the static page every 5 minutes so the protocol totals baked into it stay current.
 export const revalidate = 300
@@ -93,7 +101,7 @@ export const revalidate = 300
 export default async function HomePage() {
   const heroStats = await getHeroStats()
   return (
-    <div className="hr-site" id="top">
+    <div className={`hr-site ${roboto.variable}`} id="top">
       <LandingRouteWarmup />
       {/* HEADER */}
       <header className="hr-header">
@@ -128,16 +136,17 @@ export default async function HomePage() {
       </header>
 
       <main>
+        <LandingRibbons />
+        <noscript>
+          <style>{'.hr-art path[data-draw]{stroke-dashoffset:0!important}.hr-art-hero{visibility:visible;opacity:1}'}</style>
+        </noscript>
         {/* HERO SECTION */}
         <section className="hr-hero" aria-labelledby="hr-hero-title">
           <div className="hr-hero-bg-wrap">
-            {/* Full-width layouts show the photo with its ribbon (it meets the ribbon below the hero).
-                Stacked phone/tablet layouts crop the photo, so they use the ribbon-free version. */}
-            <picture>
-              <source media="(min-width: 1024px)" srcSet={heroWide.srcSet} sizes={heroWide.sizes} />
-              {/* eslint-disable-next-line jsx-a11y/alt-text -- alt comes from getImageProps */}
-              <img {...heroClean} className="hr-hero-bg-img" loading="eager" fetchPriority="high" />
-            </picture>
+            {/* Ribbon-free photo; the ribbon is live vector artwork drawn over it (see LandingRibbons). */}
+            {/* eslint-disable-next-line jsx-a11y/alt-text -- alt comes from getImageProps */}
+            <img {...heroClean} className="hr-hero-bg-img" loading="eager" fetchPriority="high" />
+            <RibbonArt art="header" window={[0, 0, 1795, 555]} draw="load" layer="hero-photo" className="hr-art-hero" />
           </div>
 
           <div className="hr-shell hr-hero-content">
@@ -166,21 +175,7 @@ export default async function HomePage() {
 
         {/* HERO TO MISSION TRANSITION: SILHOUETTE & CONTINUOUS RED RIBBON */}
         <div className="hr-hero-transition" aria-hidden="true">
-          <Image sizes="100vw"
-            src="/figma/threads/thread-hero-figures.png"
-            alt=""
-            width={1512}
-            height={330}
-            className="hr-hero-trans-figures"
-          />
-          <ThreadRibbon name="heroTransition" className="hr-thread-img" />
-          <Image sizes="100vw"
-            src="/figma/threads/thread-hero-ground.png"
-            alt=""
-            width={1512}
-            height={330}
-            className="hr-thread-ground hr-thread-ground-top"
-          />
+          <RibbonArt art="header" window={[-900, 555, 2695, 204]} draw="load" layer="hero-band" className="hr-art-hero" />
         </div>
 
         {/* MISSION SECTION */}
@@ -238,14 +233,7 @@ export default async function HomePage() {
 
         {/* SILHOUETTES & CONTINUOUS RIBBON BRIDGE */}
         <div className="hr-steps-ribbon-bar" aria-hidden="true">
-          <Image sizes="100vw"
-            src="/figma/threads/thread-steps-figures.png"
-            alt=""
-            width={1512}
-            height={368}
-            className="hr-steps-bridge-figures"
-          />
-          <ThreadRibbon name="stepsBridge" className="hr-steps-bridge-img" />
+          <RibbonArt art="how" draw="scroll" pace={0.5} className="hr-art-how" />
           <Image sizes="100vw"
             src="/figma/threads/thread-steps-ground.png"
             alt=""
@@ -258,9 +246,6 @@ export default async function HomePage() {
         {/* BUILT ON SOLANA (DARK SECTION) */}
         <section className="hr-security-wrap" id="security" aria-labelledby="hr-security-title">
           <div className="hr-shell hr-security-card">
-            <div className="hr-dark-card-thread-wrap" aria-hidden="true">
-              <ThreadRibbon name="darkCard" className="hr-thread-img" />
-            </div>
             <span className="hr-eyebrow">BUILT ON SOLANA</span>
             <h2 id="hr-security-title">
               Your intention shouldn&apos;t depend on anyone&apos;s discretion, including ours.
@@ -363,14 +348,12 @@ export default async function HomePage() {
           </div>
 
           <div className="hr-privacy-visual-wrap" aria-hidden="true">
-            {/* From 1200px the photo sits on the centred grid, where its ribbon meets the "Who it's for"
-                ribbon below. Narrower layouts move the photo, so they use the ribbon-free version. */}
-            <picture>
-              <source media="(min-width: 1200px)" srcSet={privacyRibbon.srcSet} sizes={privacyRibbon.sizes} />
-              {/* eslint-disable-next-line jsx-a11y/alt-text -- decorative; alt="" comes from getImageProps */}
-              <img {...privacyClean} className="hr-privacy-visual-img" />
-            </picture>
+            {/* < 1200px: the same couple and ribbon, framed on the couple (artwork region 1188,195.5
+                143x240); the ribbon runs on past the frame and slips behind "Who it's for". */}
+            <RibbonArt art="people" window={[1188, 195.5, 143, 240]} draw="scroll" pace={0.4} className="hr-art-people-compact" />
           </div>
+          {/* >= 1200px: the couple and one continuous ribbon down through "Who it's for" (live artwork). */}
+          <RibbonArt art="people" draw="scroll" pace={0.4} className="hr-art-people" />
         </section>
 
         {/* WHO IT'S FOR */}
@@ -422,11 +405,12 @@ export default async function HomePage() {
             <div className="hr-close-visual">
               <div className="hr-close-photo-wrap">
                 <Image sizes="(max-width: 860px) 100vw, 552px"
-                  src="/figma/close-beach-walk.png"
+                  src="/figma/close-beach-walk-clean.png"
                   alt="Family walking together away across a natural open horizon"
                   width={552}
                   height={725}
                 />
+                <RibbonArt art="because" className="hr-art-because" />
               </div>
             </div>
           </div>
@@ -434,9 +418,6 @@ export default async function HomePage() {
 
         {/* FINAL CTA */}
         <section className="hr-final" aria-labelledby="hr-final-title">
-          <div className="hr-final-thread-wrap" aria-hidden="true">
-            <ThreadRibbon name="final" className="hr-final-thread-img" />
-          </div>
           <div className="hr-shell hr-final-content">
             <span className="hr-eyebrow">BEGIN YOUR LEGACY</span>
             <h2 id="hr-final-title">Decide what continues.</h2>
@@ -448,12 +429,7 @@ export default async function HomePage() {
             </a>
           </div>
           <div className="hr-final-dog-walker" aria-hidden="true">
-            <Image
-              src="/figma/figures/dog-walker.png"
-              alt=""
-              width={132}
-              height={211}
-            />
+            <RibbonArt art="decide" draw="scroll" pace={0.4} className="hr-art-decide" />
           </div>
         </section>
       </main>

@@ -278,23 +278,6 @@
   margin-bottom: 0;
   line-height: 0;
 }
-.hr-hero-trans-figures {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  object-fit: fill !important;
-  pointer-events: none;
-  display: block;
-  z-index: 1;
-}
-.hr-hero-transition .hr-thread-img {
-  position: relative;
-  width: 100%;
-  height: auto;
-  display: block;
-  z-index: 2;
-}
 
 /* MISSION SECTION */
 .hr-mission { padding-block: var(--hr-section-space-compact) var(--hr-section-space); position: relative; }
@@ -542,23 +525,6 @@
   pointer-events: none;
   line-height: 0;
 }
-.hr-steps-bridge-figures {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  object-fit: fill !important;
-  pointer-events: none;
-  display: block;
-  z-index: 2;
-}
-.hr-steps-bridge-img {
-  position: relative;
-  width: 100%;
-  height: auto;
-  display: block;
-  z-index: 1;
-}
 
 /* BUILT ON SOLANA (DARK SECTION) */
 .hr-security-wrap {
@@ -573,27 +539,6 @@
   padding-bottom: clamp(64px, 6vw, 88px);
   position: relative;
   overflow: visible;
-}
-.hr-dark-card-thread-wrap {
-  position: absolute;
-  left: 100%;
-  top: 140px;
-  /* The loop lives in the page margin beside the card: never wider than that margin (minus 8px),
-     so it stays whole and attached to the card instead of being cut off at the screen edge. */
-  width: min(79px, calc(max(var(--hr-page-gutter), (100vw - var(--hr-container-max)) / 2) - 8px));
-  height: 260px;
-  pointer-events: none;
-  z-index: 2;
-}
-/* Compact (< 600px): the margin is too narrow for a loop; the ribbon simply passes behind the card. */
-@media (max-width: 599px) {
-  .hr-dark-card-thread-wrap { display: none; }
-}
-.hr-dark-card-thread-wrap img {
-  width: 100%;
-  height: 100%;
-  object-fit: contain;
-  display: block;
 }
 .hr-security-card .hr-eyebrow {
   color: var(--hr-red);
@@ -816,11 +761,6 @@
     bottom: 0;
   }
 }
-.hr-privacy-visual-img {
-  width: 100%;
-  height: auto;
-  display: block;
-}
 @media (max-width: 768px) {
   .hr-privacy-copy { width: 100%; min-width: 0; }
   .hr-privacy-badges-row { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 24px 16px; }
@@ -1015,28 +955,6 @@
   overflow: visible;
   min-height: clamp(650px, 50.7vw, 766px);
 }
-.hr-final-thread-wrap {
-  position: absolute;
-  top: 0;
-  left: 50%;
-  transform: translateX(-50%);
-  width: 100%;
-  max-width: 1512px;
-  height: 100%;
-  pointer-events: none;
-  z-index: 2;
-  overflow: visible;
-}
-.hr-final-thread-img {
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: 1512px;
-  max-width: none;
-  height: 766px;
-  display: block;
-  pointer-events: none;
-}
 .hr-final-content {
   max-width: 860px;
   margin-inline: auto;
@@ -1098,12 +1016,6 @@
   z-index: 3;
   pointer-events: none;
 }
-.hr-final-dog-walker img {
-  width: 100%;
-  height: 100%;
-  object-fit: contain;
-  display: block;
-}
 
 /* THREAD IMAGE STYLING */
 .hr-thread-img {
@@ -1139,19 +1051,12 @@
      squeezing 1512px of artwork into a phone (which shrank the figures to ~40px). Offsets come from
      where the figures sit in the artwork: hero figure at 21-27% -> lands ~30% across the screen;
      steps figures at 19-28% and 68-71% -> ~21-33% and ~84-88% across, both clear of the edges. */
-  .hr-hero-transition { width: 180vw; max-width: none; margin-left: -14vw; }
   .hr-steps-ribbon-bar { width: 130vw; max-width: none; margin-left: -4vw; }
   /* The "Who it's for" and closing ribbons are 1512px artworks whose curves sit beside the cards;
      on a phone the stacked full-width cards hide them, leaving only random-looking fragments, so
      they are omitted here (decoration is the last thing to reduce, and only when it can't work). */
   .hr-audience-thread-wrap, .hr-close-thread-wrap { display: none; }
 }
-.hr-hero-transition .hr-ribbon-svg,
-.hr-steps-bridge-img.hr-ribbon-svg {
-  height: auto;
-  aspect-ratio: 1512 / var(--hr-ribbon-h, 330);
-}
-.hr-steps-bridge-img.hr-ribbon-svg { --hr-ribbon-h: 368; }
 /* Ground shadows + figure outlines that used to live inside the ribbon images */
 .hr-thread-ground {
   position: absolute;
@@ -1163,7 +1068,6 @@
   display: block;
   z-index: 1;
 }
-.hr-thread-ground-top { z-index: 3; }
 
 /* Native refresh restoration must not animate a trip from the top. */
 html:has(.hr-site) { scroll-behavior: auto; }
@@ -1182,16 +1086,12 @@ body:has(.hr-site) { overflow-x: clip; }
 /* CONTINUOUS SEAMLESS RIBBON CHAINS (Hero -> Transition, and Privacy -> Audience -> Close)
    Locks the continuous red threads precisely to Figma coordinates,
    preventing dynamic scroll translation and responsive variance from tearing seams apart. */
-.hr-hero-transition .hr-thread-img,
-.hr-privacy-visual-img,
 .hr-audience-thread-wrap .hr-thread-img,
 .hr-close-thread-wrap .hr-thread-img {
   translate: none !important;
   will-change: auto !important;
 }
 .hr-hero-bg-img,
-.hr-hero-transition .hr-thread-img,
-.hr-steps-bridge-img,
 .hr-audience-thread-wrap .hr-thread-img,
 .hr-close-thread-wrap .hr-thread-img {
   object-fit: fill !important;
@@ -1299,12 +1199,6 @@ body:has(.hr-site) { overflow-x: clip; }
   }
 }
 
-/* Stacked hero (< 1024px): the ground artwork's thin strip at x 967-1418 only sits naturally in the
-   full-width desktop composition; here it floats as a stray line, so clip it (the figure's own
-   shadow at x 313-428 is untouched). */
-@media (max-width: 1023px) {
-  .hr-hero-transition .hr-thread-ground-top { clip-path: inset(0 35% 0 0); }
-}
 
 /* Tablet: wide enough for a landscape crop with the legacy card resting on the meadow. */
 @media (min-width: 521px) and (max-width: 1023px) {
@@ -1615,7 +1509,6 @@ body:has(.hr-site) { overflow-x: clip; }
     overflow: hidden;
     right: max(var(--hr-page-gutter), calc((100vw - var(--hr-container-max)) / 2));
   }
-  .hr-privacy-visual-wrap .hr-privacy-visual-img { width: 520px; max-width: none; height: auto; margin: -37px 0 0 -39px; }
 }
 /* Tablet portrait: the figures sit below the copy, on the right margin. */
 @media (min-width: 600px) and (max-width: 768px) {
@@ -1624,5 +1517,135 @@ body:has(.hr-site) { overflow-x: clip; }
 /* Phones: smaller (box 160x268 = scale 0.559) and centred. */
 @media (max-width: 599px) {
   .hr-privacy-visual-wrap { position: relative; right: auto; bottom: auto; width: 160px; height: 268px; margin: 32px auto 0; }
-  .hr-privacy-visual-wrap .hr-privacy-visual-img { width: 416px; margin: -30px 0 0 -31px; }
+}
+
+/* PAGE NOT FOUND */
+.hr-notfound-main {
+  min-height: 100svh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  padding: 96px var(--hr-page-gutter);
+  text-align: center;
+}
+.hr-notfound-main .hr-brand { margin-bottom: 16px; }
+.hr-notfound-main .hr-eyebrow { margin-bottom: 0; }
+.hr-notfound-main h1 { font-size: var(--hr-type-section); font-weight: 700; letter-spacing: -0.02em; color: var(--hr-ink); }
+.hr-notfound-copy { max-width: 44ch; font-size: var(--hr-type-body-lg); line-height: var(--hr-leading-body); color: var(--hr-muted); margin-bottom: 16px; }
+
+/* RIBBON ARTWORK (<RibbonArt />, animated by <LandingRibbons />)
+   Vector artwork from the Heres animation prototypes, placed on the 1512px design frame.
+   --art-sw keeps every line 4px on screen (3px on compact screens) whatever the artwork's scale. */
+.hr-art {
+  position: absolute;
+  display: block;
+  max-width: none;
+  overflow: visible;
+  pointer-events: none;
+}
+.hr-art-line {
+  fill: none;
+  stroke: #c8131a;
+  stroke-width: var(--art-sw, 4);
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.hr-art path[data-draw] { stroke-dasharray: 1 1; stroke-dashoffset: 1; }
+
+/* Gentle floating loops (amplitudes and timings from the prototypes, in artwork units). */
+.hr-art-float-header-a { animation: hr-float-header-a 6s ease-in-out infinite; }
+.hr-art-float-header-b { animation: hr-float-header-b 7s ease-in-out 0.6s infinite; }
+.hr-art-float-because-1 { transform-origin: center; animation: hr-float-1 6s ease-in-out infinite; }
+.hr-art-float-because-2 { transform-origin: center; animation: hr-float-2 7s ease-in-out 0.5s infinite; }
+.hr-art-float-because-3 { transform-origin: center; animation: hr-float-3 6.5s ease-in-out 1.1s infinite; }
+.hr-art-float-because-4 { transform-origin: center; animation: hr-float-4 7.5s ease-in-out 1.7s infinite; }
+@keyframes hr-float-header-a { 50% { transform: translate(14px, -17px) rotate(1deg); } }
+@keyframes hr-float-header-b { 50% { transform: translate(-15px, 14px) rotate(-1deg); } }
+@keyframes hr-float-1 { 50% { transform: translate(10px, -13px) rotate(0.8deg); } }
+@keyframes hr-float-2 { 50% { transform: translate(-12px, 10px) rotate(-0.9deg); } }
+@keyframes hr-float-3 { 50% { transform: translate(8px, 11px) rotate(0.6deg); } }
+@keyframes hr-float-4 { 50% { transform: translate(-9px, -9px) rotate(-0.7deg); } }
+.hr-art-idle .hr-art-float { animation-play-state: paused; }
+@media (prefers-reduced-motion: reduce) {
+  .hr-art-float { animation: none; }
+  .hr-art path[data-draw] { stroke-dashoffset: 0; }
+}
+
+/* Hero: one artwork split at the photo's bottom edge; LandingRibbons sizes both layers from the
+   photo's real crop. The CSS here is the no-JS fallback (desktop 1:1 geometry). */
+.hr-hero-bg-wrap .hr-art-hero { z-index: 1; left: -19.97%; top: 43.13%; width: 118.72%; height: 56.87%; }
+.hr-hero-transition .hr-art-hero { left: calc(-1202 / 1512 * 100%); top: 0; width: calc(2695 / 1512 * 100%); height: calc(100% - 12px); }
+/* Hidden until LandingRibbons has fitted it to the photo's real crop, then faded in, so the loops
+   never appear in a provisional spot and jump (the fallback geometry above is for no-JS only). */
+/* Each hero layer shows only its own slice of the artwork (photo part / band part); without the
+   clip, each layer would also paint the other's lines and the ribbon would appear twice. */
+.hr-art-hero { overflow: hidden; visibility: hidden; opacity: 0; transition: opacity 0.5s ease; }
+.hr-art-hero[data-placed] { visibility: visible; opacity: 1; }
+/* The band's height before the script runs equals what the script sets (artwork scale x 204 + 12px),
+   so nothing below the hero moves when it does. Scale = the photo's cover scale for each layout. */
+.hr-hero-transition { height: calc(min(100vw, 1512px) * 204 / 1512 + 12px); z-index: 4; }
+@media (max-width: 1023px) {
+  .hr-hero-transition { height: calc(max(100vw * 204 / 1512, min(100vw * 2 / 3, 640px) * 204 / 976) + 12px); }
+}
+@media (max-width: 520px) {
+  .hr-hero-transition { height: calc(max(100vw * 204 / 1512, min(100vw * 5 / 4, 640px) * 204 / 976) + 12px); }
+}
+
+/* How it works: the band under the steps (figures + ribbon), artwork offset (-24, -82). It keeps
+   growing up to 1920px so the ribbon still enters from the screen edge on wide monitors. */
+.hr-steps-ribbon-bar { aspect-ratio: 1512 / 368; max-width: 1920px; }
+.hr-art-how {
+  left: calc(-24 / 1512 * 100%);
+  top: calc(-82 / 368 * 100%);
+  width: calc(1536 / 1512 * 100%);
+  height: auto;
+  aspect-ratio: 1536 / 1014;
+  z-index: 2;
+}
+/* The ribbon continues behind the dark card. */
+.hr-security-wrap { position: relative; z-index: 6; }
+
+/* People: from 1200px the couple and one continuous ribbon run from the privacy section down
+   through "Who it's for"; narrower layouts keep the photo crop and the section ribbons. */
+.hr-art-people { display: none; }
+@media (min-width: 1200px) {
+  .hr-art-people {
+    display: block;
+    left: calc(50% - 776px);
+    top: calc(100% - 632px);
+    width: 1589px;
+    height: 1770px;
+    z-index: 1;
+  }
+  .hr-audience-thread-wrap, .hr-close-thread-wrap { display: none; }
+}
+
+/* Below 1200px the couple frame shows the same artwork, and the ribbon around it is clipped at the
+   section's edges so it enters from the screen edge and slips behind "Who it's for". */
+.hr-art-people-compact { left: 0; top: 0; width: 100%; height: 100%; }
+@media (min-width: 1200px) {
+  .hr-art-people-compact { display: none; }
+}
+@media (max-width: 1199px) {
+  .hr-privacy-wrap { overflow: hidden; overflow: clip; }
+  .hr-privacy-visual-wrap { overflow: visible; }
+}
+
+/* Because what matters: the loose threads on the beach photo, artwork at (0, 170) of 552x725. */
+.hr-art-because { left: 0; top: calc(170 / 725 * 100%); width: calc(551 / 552 * 100%); height: calc(417 / 725 * 100%); z-index: 1; }
+
+/* Decide: the dog walker is part of the artwork; its figure fills the old 132x211 box. */
+.hr-final-dog-walker { aspect-ratio: 132 / 211; }
+/* Stacked layout (<= 860px): the walker sits under the call to action, so leave room for the
+   ribbon's high curve to pass below the text instead of through it. */
+@media (max-width: 860px) {
+  .hr-final-dog-walker { margin-top: clamp(120px, 28vw, 220px); }
+}
+.hr-art-decide {
+  left: 0;
+  top: calc(-624 / 211 * 100%);
+  width: calc(1107 / 132 * 100%);
+  height: calc(1124 / 211 * 100%);
 }
