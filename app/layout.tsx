@@ -44,7 +44,7 @@ const hankenGrotesk = Hanken_Grotesk({
 })
 
 export const viewport: Viewport = {
-  themeColor: '#2DD4E8',
+  themeColor: '#fbf9f4',
   width: 'device-width',
   initialScale: 1,
   maximumScale: 5,

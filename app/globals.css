@@ -9,6 +9,24 @@ html {
   scroll-behavior: smooth;
 }
 
+/* Public pages use the current warm design. Paint the page canvas to match before any page CSS
+   arrives, so a refresh or an over-scroll never flashes the retired dark theme behind them. */
+html:has(.hr-site),
+html:has(.cf-page),
+html:has(.hr-notfound) {
+  background: #fbf9f4;
+}
+html:has(.hr-site) body,
+html:has(.cf-page) body,
+html:has(.hr-notfound) body {
+  background: #fbf9f4;
+  color: #1c181d;
+}
+html:has(.hr-pricing-page),
+html:has(.hr-pricing-page) body {
+  background: #050b14;
+}
+
 body {
   color: var(--vellum);
   background: var(--Heres-bg);

@@ -4,10 +4,8 @@ import { usePathname } from 'next/navigation'
 import type { ReactNode } from 'react'
 
 /**
- * Renders the global app chrome (Navbar + Footer) around app content, except on
- * routes that ship their own full-bleed chrome. The landing page and capsule
- * creation wizard both own their header/footer treatment and must not inherit
- * the legacy app shell.
+ * Renders the legacy app chrome (Navbar + Footer) only around the internal admin
+ * console. All public routes own their header/footer treatment.
  */
 export function SiteChrome({
   nav,
@@ -19,10 +17,11 @@ export function SiteChrome({
   children: ReactNode
 }) {
   const pathname = usePathname()
-  const isSelfContained = pathname === '/' || pathname === '/create' || pathname === '/pricing' || pathname === '/dashboard' || pathname === '/capsules' || pathname?.startsWith('/capsules/')
+  // Only the internal admin console still uses the legacy app shell. Every public page (including
+  // "page not found") ships its own current chrome, so nothing from the old frontend leaks through.
+  const usesLegacyShell = pathname === '/admin' || pathname?.startsWith('/admin/')
 
-  if (isSelfContained) {
-    // These pages provide their own main surface and navigation.
+  if (!usesLegacyShell) {
     return <>{children}</>
   }
 
