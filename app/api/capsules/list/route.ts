@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { ensureDashboardPrewarmScheduler, getCapsulesListPage, type CapsuleListFilter, type CapsuleListSort } from '@/lib/dashboard'
 import { verifyAdminRequest } from '@/lib/admin-auth'
+import { getSessionWallet } from '@/lib/siwx/server'
 
 const validFilters = new Set<CapsuleListFilter>(['all', 'live', 'created', 'executed', 'active', 'expired'])
 const validSorts = new Set<CapsuleListSort>(['newest', 'oldest'])
@@ -8,7 +9,7 @@ const validSorts = new Set<CapsuleListSort>(['newest', 'oldest'])
 export async function GET(request: NextRequest) {
   try {
     // Admin-gated: paginated per-capsule feed of every owner's data.
-    const auth = verifyAdminRequest(request.headers)
+    const auth = verifyAdminRequest(request.headers, await getSessionWallet(request))
     if (!auth.ok) {
       return NextResponse.json({ error: auth.error }, { status: auth.status })
     }
