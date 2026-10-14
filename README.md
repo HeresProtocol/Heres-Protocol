@@ -72,5 +72,3 @@ An enterprise-grade SDK designed for Solana Treasuries, DAOs, and institutional 
 * **[Website](heresprotocol.com)**
 * **[Twitter/X](https://x.com/Heresprotocol)**
 * **[Linkedin](https://www.linkedin.com/company/heres-protocol/)**
-
-*Heres Protocol is proudly participating in the Colosseum Hackathon. We are a bootstrapped team currently seeking 1.5M in Seed funding to build the definitive safety net for the Internet Capital Markets.*
