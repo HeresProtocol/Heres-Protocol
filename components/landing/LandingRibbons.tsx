@@ -115,6 +115,8 @@ export function LandingRibbons() {
     const scrollLines = lines('scroll')
 
     const layout = () => {
+      // Classic (non-overlay) scrollbar width, so CSS can align capped sections to the page rails.
+      document.documentElement.style.setProperty('--hr-sbw', `${window.innerWidth - document.documentElement.clientWidth}px`)
       placeHero()
       setLineWeights()
     }
@@ -136,12 +138,21 @@ export function LandingRibbons() {
       const vh = window.innerHeight
       const scrollLeft = Math.max(0, document.documentElement.scrollHeight - vh - window.scrollY)
       for (const l of scrollLines) {
+        const section = l.path.dataset.within ? l.path.closest<HTMLElement>(l.path.dataset.within) : null
+        if (section) {
+          // Drawn while the section rises into view: starts as its top passes 85% of the screen and
+          // is complete, lead-out included, once the whole section is on screen.
+          const s = section.getBoundingClientRect()
+          const run = Math.max(120, s.height - vh * 0.15)
+          showLine(l, ((vh * 0.85 - s.top) / run) * (1 + l.b))
+          continue
+        }
         const rect = l.path.getBoundingClientRect()
         const pace = Number(l.path.dataset.pace) || 0.4
         const span = rect.height + vh * pace
         // Near the end of the page there may not be enough scroll left to finish the line, so the
-        // pace is stretched to make it complete exactly at the bottom of the page.
-        const atEnd = (vh - (rect.top - scrollLeft)) / span
+        // pace is stretched to make it complete, lead-out included (1 + b), at the bottom of the page.
+        const atEnd = (vh - (rect.top - scrollLeft)) / span / (1 + l.b)
         showLine(l, ((vh - rect.top) / span) / Math.min(1, Math.max(atEnd, 0.01)))
       }
     }

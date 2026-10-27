@@ -429,7 +429,7 @@ export default async function HomePage() {
             </a>
           </div>
           <div className="hr-final-dog-walker" aria-hidden="true">
-            <RibbonArt art="decide" draw="scroll" pace={0.4} className="hr-art-decide" />
+            <RibbonArt art="decide" draw="scroll" within=".hr-final" className="hr-art-decide" />
           </div>
         </section>
       </main>
