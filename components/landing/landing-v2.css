@@ -11,7 +11,11 @@
   --hr-dark: #221c26;
   --hr-dark-card: #1d1922;
   --hr-card-bg: #faf8f5;
-  --hr-container-max: 1356px;
+  /* Page grid per the design manual (Bevan Product Design Operating Manual, 2.3-2.4): content is
+     capped at 1440px (>= 1600px screens get 240px margins at 1920); desktop margins are 32px at
+     840-1199px, then 48px at 1280, 64px at 1440 and 80px at 1600. Below 840px the margins keep
+     the proportional phone/tablet values. */
+  --hr-container-max: 1440px;
   --hr-page-gutter: clamp(20px, 5.15vw, 78px);
   --hr-grid-gap: clamp(40px, 6vw, 90px);
   --hr-section-space: clamp(80px, 7.9vw, 120px);
@@ -952,7 +956,9 @@
   padding-bottom: var(--hr-section-space-compact);
   text-align: center;
   position: relative;
-  overflow: visible;
+  /* The closing ribbon runs off the bottom of the panel; clip it at the panel's edge. */
+  overflow: hidden;
+  overflow: clip;
   min-height: clamp(650px, 50.7vw, 766px);
 }
 .hr-final-content {
@@ -1648,4 +1654,20 @@ body:has(.hr-site) { overflow-x: clip; }
   top: calc(-624 / 211 * 100%);
   width: calc(1107 / 132 * 100%);
   height: calc(1124 / 211 * 100%);
+}
+
+/* Desktop margins from the design manual's grid classes (see the tokens at the top). */
+@media (min-width: 840px) {
+  .hr-site, .hr-pricing-page { --hr-page-gutter: 32px; }
+}
+@media (min-width: 1200px) {
+  .hr-site, .hr-pricing-page { --hr-page-gutter: clamp(48px, calc(10vw - 80px), 80px); }
+}
+/* Sections capped at 1512px (hero card, privacy): on wider screens keep their content on the same
+   page rails as the header. --hr-sbw is the classic-scrollbar width (set by LandingRibbons). */
+@media (min-width: 1513px) {
+  .hr-hero .hr-shell,
+  .hr-privacy-wrap .hr-shell {
+    width: min(var(--hr-container-max), calc(100% - 2 * max(0px, var(--hr-page-gutter) - (100vw - var(--hr-sbw, 0px) - 100%) / 2)));
+  }
 }

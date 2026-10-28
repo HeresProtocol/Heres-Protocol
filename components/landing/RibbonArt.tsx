@@ -11,6 +11,9 @@ type Props = {
   draw?: 'load' | 'scroll' | 'none'
   /** Scroll-draw pacing from the prototypes: higher = the line finishes later. */
   pace?: number
+  /** Scroll drawing: finish the line within this section (CSS selector of an ancestor) instead of
+   *  pacing it by the line's own height, so it is complete by the time the section is in view. */
+  within?: string
   /** Marks a layer for LandingRibbons to position (hero photo / hero band). */
   layer?: string
 }
@@ -20,7 +23,7 @@ type Props = {
  * vector. Motion (drawing, line weight, hero placement) is applied by <LandingRibbons />; without
  * JavaScript or with reduced motion the artwork is simply shown complete.
  */
-export function RibbonArt({ art, className, window: win, draw = 'none', pace = 0.4, layer }: Props) {
+export function RibbonArt({ art, className, window: win, draw = 'none', pace = 0.4, within, layer }: Props) {
   const { width, height, paths } = ART[art]
   const [x, y, w, h] = win ?? [0, 0, width, height]
   return (
@@ -47,6 +50,7 @@ export function RibbonArt({ art, className, window: win, draw = 'none', pace = 0
               data-line={p.id}
               data-order={draw === 'load' ? order : undefined}
               data-pace={draw === 'scroll' ? pace : undefined}
+              data-within={draw === 'scroll' ? within : undefined}
             />
           )
         }

@@ -257,6 +257,12 @@ export const ART: Record<"header" | "how" | "people" | "because" | "decide", Rib
         "of": "hrsLine",
         "side": "start",
         "d": "M2300 10 C1700 120 1300 250 1106 290.25"
+      },
+      {
+        "role": "ext",
+        "of": "hrsLine",
+        "side": "end",
+        "d": "M107.503 833.249 C69.9 846.9 42 880 40 960 L40 1700"
       }
     ]
   }
