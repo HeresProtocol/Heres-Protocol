@@ -2,7 +2,11 @@
 const nextConfig = {
   reactStrictMode: true,
   images: {
-    formats: ['image/avif', 'image/webp'],
+    // WebP only: at the same quality AVIF smooths away the fine detail (faces, hair, fabric) of the
+    // landing photographs, which are shown at or above their full source resolution on desktop.
+    formats: ['image/webp'],
+    // 90 for the large photographs (hero); 75 stays the default elsewhere.
+    qualities: [75, 90],
   },
   webpack: (config, { isServer, webpack }) => {
     // Fix pnpm hoisting: ensure bs58 resolves to the top-level copy

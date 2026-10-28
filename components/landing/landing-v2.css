@@ -152,8 +152,8 @@
 .hr-hero {
   position: relative;
   width: 100%;
-  max-width: 1512px;
-  margin-inline: auto;
+  /* Full screen width on every screen (scales up past the 1512px design frame on large monitors,
+     exactly as on a laptop) so the photo never sits in a box with empty space at the sides. */
   aspect-ratio: 1512 / 976;
   border-radius: 0 0 48px 48px;
   overflow: hidden;
@@ -275,7 +275,6 @@
 .hr-hero-transition {
   position: relative;
   width: 100%;
-  max-width: 1512px;
   margin-inline: auto;
   overflow: visible;
   margin-top: -1px;
@@ -1591,7 +1590,7 @@ body:has(.hr-site) { overflow-x: clip; }
 .hr-art-hero[data-placed] { visibility: visible; opacity: 1; }
 /* The band's height before the script runs equals what the script sets (artwork scale x 204 + 12px),
    so nothing below the hero moves when it does. Scale = the photo's cover scale for each layout. */
-.hr-hero-transition { height: calc(min(100vw, 1512px) * 204 / 1512 + 12px); z-index: 4; }
+.hr-hero-transition { height: calc(100vw * 204 / 1512 + 12px); z-index: 4; }
 @media (max-width: 1023px) {
   .hr-hero-transition { height: calc(max(100vw * 204 / 1512, min(100vw * 2 / 3, 640px) * 204 / 976) + 12px); }
 }

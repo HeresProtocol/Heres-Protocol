@@ -5,6 +5,7 @@ import { usePrivy } from '@privy-io/react-auth'
 import { useWalletModal } from '@solana/wallet-adapter-react-ui'
 import { StepHead } from './CreateShell'
 import { IconSpinner } from './ui'
+import { usePrivyLoginMethods } from '@/hooks/usePrivyLoginMethods'
 
 function CapsuleHint() {
   return (
@@ -18,6 +19,8 @@ function CapsuleHint() {
 export function StepConnect({ onBack }: { onBack: () => void }) {
   const { ready, authenticated, login } = usePrivy()
   const { setVisible } = useWalletModal()
+  const loginMethods = usePrivyLoginMethods()
+  const withGoogle = loginMethods.includes('google')
   // Signed in with Privy but the embedded wallet is still being provisioned.
   const provisioning = ready && authenticated
 
@@ -43,7 +46,7 @@ export function StepConnect({ onBack }: { onBack: () => void }) {
             <CapsuleHint />
           </div>
           <div className="cf-connect-card">
-            <h2>Sign in with email</h2>
+            <h2>{withGoogle ? 'Sign in with email or Google' : 'Sign in with email'}</h2>
             <p>
               We&rsquo;ll create a new wallet for you automatically &mdash; separate from any wallet you already have. No seed
               phrase, no browser extension required.
@@ -52,7 +55,7 @@ export function StepConnect({ onBack }: { onBack: () => void }) {
               type="button"
               className="cf-btn cf-btn--light"
               disabled={!ready || provisioning}
-              onClick={() => login({ loginMethods: ['email'] })}
+              onClick={() => login({ loginMethods })}
             >
               {provisioning ? <><IconSpinner /> Preparing</> : 'Sign in'}
             </button>

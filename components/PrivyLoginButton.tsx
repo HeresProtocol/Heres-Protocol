@@ -7,6 +7,7 @@ import { useExportWallet } from '@privy-io/react-auth/solana'
 import { useWallet as useSolanaWallet } from '@solana/wallet-adapter-react'
 import { useWalletModal } from '@solana/wallet-adapter-react-ui'
 import { useHeresWallet } from '@/hooks/useHeresWallet'
+import { usePrivyLoginMethods } from '@/hooks/usePrivyLoginMethods'
 import { useSolBalance } from '@/hooks/queries/useSolBalance'
 import { formatSol } from '@/lib/format'
 import { cn, useToast } from '@/components/ui'
@@ -33,6 +34,7 @@ export function PrivyLoginButton({ className = '' }: { className?: string }) {
   const { exportWallet } = useExportWallet()
   const { connected: externalConnected, disconnect: disconnectExternal } = useSolanaWallet()
   const { setVisible: setWalletModalVisible } = useWalletModal()
+  const loginMethods = usePrivyLoginMethods()
   const { toast } = useToast()
   const wallet = useHeresWallet()
   const { publicKey } = wallet
@@ -149,12 +151,12 @@ export function PrivyLoginButton({ className = '' }: { className?: string }) {
               onClick={() => {
                 if (!ready) return
                 setOpen(false)
-                login({ loginMethods: ['email'] })
+                login({ loginMethods })
               }}
               className="group flex w-full items-center gap-3 px-4 py-3.5 text-left text-sm font-medium text-Heres-white transition-colors hover:bg-Heres-accent/10 hover:text-Heres-accent disabled:cursor-wait disabled:opacity-50 disabled:hover:bg-transparent disabled:hover:text-Heres-white"
             >
               <Mail className="h-4 w-4 text-Heres-muted group-hover:text-Heres-accent" aria-hidden />
-              {ready ? 'Continue with email' : 'Email sign-in loading…'}
+              {ready ? (loginMethods.includes('google') ? 'Continue with email or Google' : 'Continue with email') : 'Email sign-in loading…'}
             </button>
             <button
               type="button"

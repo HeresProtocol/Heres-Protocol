@@ -10,6 +10,7 @@ import { useState, ReactNode } from 'react'
 import { makeQueryClient } from '@/lib/query/client'
 import { ToastProvider } from '@/components/ui'
 import { HELIUS_CONFIG } from '@/constants'
+import { PRIVY_LOGIN_METHODS } from '@/hooks/usePrivyLoginMethods'
 
 // Set in the Privy dashboard (dashboard.privy.io). REQUIRED: Privy rejects anything
 // that isn't a 25-char app id at construction, so the build/app fails fast without it.
@@ -27,7 +28,7 @@ export function Providers({ children }: { children: ReactNode }) {
         // Privy owns email/embedded-wallet onboarding. Installed browser wallets
         // use Solana Wallet Adapter below so extension detection stays local to
         // the page instead of falling through to Privy's download links.
-        loginMethods: ['email'],
+        loginMethods: PRIVY_LOGIN_METHODS,
         appearance: {
           walletChainType: 'solana-only',
           // Matches the capsule builder: dark panel with the Heres red for the primary action.

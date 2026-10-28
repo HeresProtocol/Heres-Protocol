@@ -91,7 +91,8 @@ const heroImage = {
   alt: 'Parents lifting their child in a meadow',
   fill: true,
   priority: true,
-  sizes: '(max-width: 1512px) 100vw, 1512px',
+  sizes: '100vw',
+  quality: 90,
 } as const
 const { props: heroClean } = getImageProps({ ...heroImage, src: '/figma/hero-wide-bg-clean.png' })
 
