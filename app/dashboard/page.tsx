@@ -25,6 +25,7 @@ import {
   type CapsuleLabels,
 } from '@/components/dashboard/meta'
 import { HdIcon } from '@/components/dashboard/icons'
+import { usePrivyLoginMethods } from '@/hooks/usePrivyLoginMethods'
 
 type Tone = 'ok' | 'warn' | 'done' | 'muted'
 
@@ -32,6 +33,7 @@ export default function DashboardPage() {
   const router = useRouter()
   const { wallet, query, vault } = useOwnedCapsuleOverview()
   const { login } = usePrivy()
+  const loginMethods = usePrivyLoginMethods()
   const { setVisible } = useWalletModal()
   const external = useSolanaWallet()
   const capsule = query.data ?? null
@@ -194,7 +196,7 @@ export default function DashboardPage() {
         <p>Your dashboard follows the wallet you connect. Nothing moves and nothing is signed just by connecting.</p>
         <div className="hd-empty__actions">
           <button type="button" className="cf-btn cf-btn--light" onClick={() => setVisible(true)}>Connect wallet</button>
-          <button type="button" className="cf-btn cf-btn--ghost" onClick={() => login({ loginMethods: ['email'] })}>Sign in with email</button>
+          <button type="button" className="cf-btn cf-btn--ghost" onClick={() => login({ loginMethods })}>{loginMethods.includes('google') ? 'Sign in with email or Google' : 'Sign in with email'}</button>
         </div>
       </section>
     )
