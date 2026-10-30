@@ -4,14 +4,17 @@ import { buildAdminSignedMessage } from '@/utils/adminAuth'
 import { isAdminWallet } from '@/lib/admin'
 
 /**
- * Server-side admin authorization. The admin explorer sends three headers:
- *   x-admin-owner      base58 wallet pubkey
- *   x-admin-timestamp  ms epoch the message was signed at
- *   x-admin-signature  base64 ed25519 signature of buildAdminSignedMessage(...)
+ * Server-side admin authorization. A request is authorized by either:
+ *   - a SIWX session (one wallet sign-in a day, see lib/siwx/server.ts) of an
+ *     allowlisted wallet, passed as `sessionWallet`; or
+ *   - three headers, each request signed:
+ *       x-admin-owner      base58 wallet pubkey
+ *       x-admin-timestamp  ms epoch the message was signed at
+ *       x-admin-signature  base64 ed25519 signature of buildAdminSignedMessage(...)
+ *     accepted only if the wallet is allowlisted, the timestamp is recent, and the
+ *     signature verifies against the wallet's public key.
  *
- * A request is authorized only if the wallet is allowlisted, the timestamp is
- * recent, and the signature verifies against the wallet's public key. This is the
- * actual gate -- the client-side allowlist check is only cosmetic.
+ * This is the actual gate -- the client-side allowlist check is only cosmetic.
  */
 const SIGNATURE_MAX_AGE_MS = 5 * 60 * 1000
 const ED25519_SPKI_PREFIX = Buffer.from('302a300506032b6570032100', 'hex')
@@ -31,7 +34,11 @@ function verifySignature(owner: string, message: string, signatureBase64: string
   }
 }
 
-export function verifyAdminRequest(headers: Headers): AdminAuthResult {
+export function verifyAdminRequest(headers: Headers, sessionWallet?: string | null): AdminAuthResult {
+  if (sessionWallet && isAdminWallet(sessionWallet)) {
+    return { ok: true, owner: sessionWallet }
+  }
+
   const owner = headers.get('x-admin-owner')?.trim() || ''
   const timestampRaw = headers.get('x-admin-timestamp') || ''
   const signature = headers.get('x-admin-signature') || ''
